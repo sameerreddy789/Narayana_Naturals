@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "255355716241",
+    "firebase_url": "https://narayananaturals-6b5aa-default-rtdb.firebaseio.com",
+    "project_id": "narayananaturals-6b5aa",
+    "storage_bucket": "narayananaturals-6b5aa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:255355716241:android:516c520663c796acdd3530",
+        "android_client_info": {
+          "package_name": "com.narayananaturals.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "255355716241-9rrcqi0msgq4mm9sbg67j7fvlp57ii4k.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.narayananaturals.app",
+            "certificate_hash": "88c66de56dbf0fd87b2e24aacc846b115e98f66a"
+          }
+        },
+        {
+          "client_id": "255355716241-6tdmrvtb8qpvjfegnb4rh05gs1nio680.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAh72R-JNLHOtBESOBePr17iNgmOpQ-SxE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "255355716241-6tdmrvtb8qpvjfegnb4rh05gs1nio680.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

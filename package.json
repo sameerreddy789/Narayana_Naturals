@@ -1,0 +1,29 @@
+{
+  "name": "narayana-naturals",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "overrides": {
+    "@grpc/grpc-js": "1.14.6",
+    "@firebase/app": "0.16.2",
+    "@firebase/app-compat": "0.5.18"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/web",
+    "test": "npm run test --workspace apps/web",
+    "backend:install": "npm ci --prefix functions --workspaces=false",
+    "backend:build": "npm run build --prefix functions",
+    "backend:test": "npm run test --prefix functions",
+    "emulators": "firebase emulators:start --project demo-narayana-naturals --only auth,firestore,functions",
+    "emulators:seed": "npm run backend:build && node scripts/seed-emulators.mjs",
+    "test:integration": "firebase emulators:exec --project demo-narayana-naturals --only auth,firestore,functions \"npm --prefix functions run test:integration\""
+  },
+  "devDependencies": {
+    "@grpc/grpc-js": "1.14.6",
+    "firebase-tools": "^15.34.0"
+  }
+}

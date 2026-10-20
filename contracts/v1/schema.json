@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://narayananaturals.example/contracts/v1/schema.json",
+  "title": "Narayana Naturals commerce v1",
+  "$defs": {
+    "variantId": {"type":"string","enum":["1l","2l","5l"]},
+    "money": {"type":"integer","minimum":0,"maximum":100000000},
+    "bilingual": {"type":"object","required":["en","te"],"additionalProperties":false,"properties":{"en":{"type":"string"},"te":{"type":"string"}}},
+    "line": {"type":"object","required":["id","quantity"],"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/variantId"},"quantity":{"type":"integer","minimum":1,"maximum":20}}},
+    "lines": {"type":"array","minItems":1,"maxItems":3,"items":{"$ref":"#/$defs/line"}},
+    "address": {"type":"object","required":["name","phone","street","city","pin"],"additionalProperties":false,"properties":{"name":{"type":"string","minLength":2,"maxLength":100},"phone":{"type":"string","pattern":"^[6-9][0-9]{9}$"},"street":{"type":"string","minLength":5,"maxLength":300},"city":{"type":"string","minLength":2,"maxLength":100},"pin":{"type":"string","pattern":"^[1-9][0-9]{5}$"}}},
+    "orderLine": {"type":"object","required":["id","quantity","litres","unitPricePaise"],"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/variantId"},"quantity":{"type":"integer","minimum":1,"maximum":20},"litres":{"type":"integer","enum":[1,2,5]},"unitPricePaise":{"$ref":"#/$defs/money"}}},
+    "quoteRequest": {"type":"object","required":["lines","address","channel"],"additionalProperties":false,"properties":{"lines":{"$ref":"#/$defs/lines"},"address":{"$ref":"#/$defs/address"},"channel":{"type":"string","enum":["web","android"]}}},
+    "quoteResponse": {"type":"object","required":["quoteId","subtotalPaise","shippingPaise","totalPaise","codAllowed","estimate","expiresAt","preview","lines"],"additionalProperties":false,"properties":{"quoteId":{"type":"string"},"subtotalPaise":{"$ref":"#/$defs/money"},"shippingPaise":{"$ref":"#/$defs/money"},"totalPaise":{"$ref":"#/$defs/money"},"codAllowed":{"type":"boolean"},"estimate":{"type":"string"},"expiresAt":{"type":"string","format":"date-time"},"preview":{"type":"boolean"},"lines":{"type":"array","items":{"$ref":"#/$defs/orderLine"}}}},
+    "placeCodOrderRequest": {"type":"object","required":["quoteId","idempotencyKey"],"additionalProperties":false,"properties":{"quoteId":{"type":"string","pattern":"^[A-Za-z0-9_-]{8,128}$"},"idempotencyKey":{"type":"string","pattern":"^[A-Za-z0-9_-]{8,128}$"}}},
+    "placeCodOrderResponse": {"type":"object","required":["orderId"],"additionalProperties":false,"properties":{"orderId":{"type":"string"}}},
+    "updateVariantRequest": {"type":"object","required":["id","pricePaise","stock","enabled"],"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/variantId"},"pricePaise":{"type":"integer","minimum":100,"maximum":1000000},"stock":{"type":"integer","minimum":0,"maximum":100000},"enabled":{"type":"boolean"}}},
+    "updateOrderStatusRequest": {"type":"object","required":["orderId","status"],"additionalProperties":false,"properties":{"orderId":{"type":"string","pattern":"^[A-Za-z0-9_-]{8,128}$"},"status":{"type":"string","enum":["received","packed","shipped","delivered","cancelled"]}}},
+    "order": {"type":"object","required":["id","uid","customerPhone","createdAt","lines","address","subtotalPaise","shippingPaise","totalPaise","paymentMethod","paymentStatus","status","channel","preview"],"properties":{"id":{"type":"string"},"uid":{"type":"string"},"customerPhone":{"type":"string","pattern":"^\\+91[6-9][0-9]{9}$"},"createdAt":{"type":"string","format":"date-time"},"lines":{"type":"array","items":{"$ref":"#/$defs/orderLine"}},"address":{"$ref":"#/$defs/address"},"subtotalPaise":{"$ref":"#/$defs/money"},"shippingPaise":{"$ref":"#/$defs/money"},"totalPaise":{"$ref":"#/$defs/money"},"paymentMethod":{"const":"cod"},"paymentStatus":{"type":"string","enum":["pending_collection","collected","cancelled"]},"status":{"type":"string","enum":["received","packed","shipped","delivered","cancelled"]},"channel":{"type":"string","enum":["web","android"]},"preview":{"type":"boolean"}}}
+  }
+}

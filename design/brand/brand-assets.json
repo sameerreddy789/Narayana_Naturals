@@ -1,0 +1,33 @@
+{
+  "sourceSize": [
+    442,
+    422
+  ],
+  "sourceFile": "narayana-naturals-logo-original.jpg",
+  "colors": {
+    "green": "#2f553b",
+    "grain": "#8b603a",
+    "cream": "#faf6ed"
+  },
+  "stacked": {
+    "width": 364,
+    "height": 230
+  },
+  "horizontal": {
+    "width": 394,
+    "height": 72
+  },
+  "markBox": [
+    147,
+    111,
+    305,
+    257
+  ],
+  "wordmarkBox": [
+    49,
+    276,
+    393,
+    321
+  ],
+  "method": "Two-color segmentation and cubic-spline contour tracing; lettering remains outlines from the supplied image."
+}

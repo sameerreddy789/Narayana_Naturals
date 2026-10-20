@@ -1,0 +1,9 @@
+{
+  "source": "Owner-supplied Narayana Naturals logo; enhanced files in design/brand",
+  "logoFiles": ["horizontal.svg", "logo.svg", "mark.svg", "logo.png"],
+  "method": "Copied existing brand assets. Launcher PNGs use the actual upper leaf/stem/grain mark from the transparent owner logo on pistachio.",
+  "reproduction": "python apps/mobile/tool/prepare_brand_assets.py",
+  "fonts": "Source Sans 3, Noto Sans Telugu, Anek Telugu; native conversion of the repository's licensed Fontsource files. Full font licenses are in assets/fonts.",
+  "productArt": "Runtime flat geometric pack concept with supplied mark. Every customer-facing rendition is labelled Pack illustration; no actual product photograph is implied.",
+  "aiGenerated": false
+}

@@ -1,0 +1,33 @@
+node_modules/
+.next/
+out/
+.env*
+!.env.example
+*.tsbuildinfo
+.test-build/
+*.log
+.local-run/
+
+# Flutter and Android generated files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.gradle/
+.kotlin/
+build/
+coverage/
+local.properties
+key.properties
+*.jks
+*.keystore
+*.iml
+.idea/
+
+# Backend outputs and local emulator state
+functions/lib/
+firebase/emulator-data/
+.firebase/
+artifacts/
+
+# Keep the canonical Android configuration under apps/mobile/android/app.
+/google-services*.json

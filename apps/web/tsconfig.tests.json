@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "noEmit": false,
+    "incremental": false,
+    "outDir": ".test-build",
+    "rootDir": "."
+  },
+  "include": ["src/lib/demo.ts", "src/lib/commerce.ts", "src/lib/checkout.ts", "tests/commerce.test.ts"],
+  "exclude": ["node_modules", ".test-build"]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "narayana-naturals-functions",
+  "version": "1.0.0",
+  "private": true,
+  "main": "lib/src/index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test lib/test/unit.test.js",
+    "test:integration": "npm run build && node --test --test-concurrency=1 lib/test/rules.test.js lib/test/integration.test.js",
+    "seed:emulator": "npm run build && node lib/scripts/seed-emulator.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@types/node": "^22.18.0",
+    "firebase": "^12.19.0",
+    "typescript": "^5.9.2"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6",
+    "@firebase/app": "0.16.2",
+    "@firebase/app-compat": "0.5.18"
+  }
+}
