@@ -51,13 +51,13 @@ class AccountPage extends StatelessWidget {
               'తదుపరి ఆర్డర్‌ను సులభం చేయండి',
             ),
             body: context.tr(
-              'Sign in to keep your cart, address and order history with your phone account.',
-              'కార్ట్, చిరునామా, ఆర్డర్ చరిత్రను మీ ఫోన్ ఖాతాలో ఉంచడానికి సైన్ ఇన్ చేయండి.',
+              'Sign in to keep your cart, address and order history with your email account.',
+              'కార్ట్, చిరునామా, ఆర్డర్ చరిత్రను మీ ఈమెయిల్ ఖాతాలో ఉంచడానికి సైన్ ఇన్ చేయండి.',
             ),
             action: FilledButton(
               onPressed: onSignIn,
               child: Text(
-                context.tr('Sign in with phone', 'ఫోన్‌తో సైన్ ఇన్ చేయండి'),
+                context.tr('Sign in with email', 'ఈమెయిల్‌తో సైన్ ఇన్ చేయండి'),
               ),
             ),
           ),
@@ -82,8 +82,8 @@ class AccountPage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            app.user?.phone ??
-                context.tr('Phone verification required', 'ఫోన్ ధృవీకరణ అవసరం'),
+            app.user?.email ??
+                context.tr('Email account required', 'ఈమెయిల్ ఖాతా అవసరం'),
           ),
           TextButton(
             onPressed: onName,
@@ -384,20 +384,20 @@ class InfoPage extends StatelessWidget {
         _InfoParagraph(
           title: context.tr('Your account information', 'మీ ఖాతా సమాచారం'),
           body: context.tr(
-            'Your phone verifies your account. Your signed-in account saves your cart, name, delivery address, orders and guide preferences. Sign out when using a shared device.',
-            'మీ ఫోన్ ఖాతాను ధృవీకరిస్తుంది. సైన్ ఇన్ చేసిన ఖాతాలో కార్ట్, పేరు, చిరునామా, ఆర్డర్‌లు, సూచనల ఎంపికలు సేవ్ అవుతాయి. ఇతరులు ఉపయోగించే పరికరంలో సైన్ అవుట్ చేయండి.',
+            'Your email and password sign you into your account. Your signed-in account saves your cart, name, delivery address, orders and guide preferences. Sign out when using a shared device.',
+            'మీ ఈమెయిల్ మరియు పాస్‌వర్డ్‌తో ఖాతాలోకి సైన్ ఇన్ చేయండి. ఖాతాలో కార్ట్, పేరు, చిరునామా, ఆర్డర్‌లు, సూచనల ఎంపికలు సేవ్ అవుతాయి. ఇతరులు ఉపయోగించే పరికరంలో సైన్ అవుట్ చేయండి.',
           ),
         ),
       ],
       InfoTopic.help => [
         _InfoParagraph(
           title: context.tr(
-            'Sign-in code did not arrive?',
-            'సైన్ ఇన్ కోడ్ రాలేదా?',
+            'Forgot your password?',
+            'పాస్‌వర్డ్ మర్చిపోయారా?',
           ),
           body: context.tr(
-            'Check your mobile number and connection. Wait for the resend timer, then request a new code. If the app reports an SMS limit, try later.',
-            'మొబైల్ నంబర్, కనెక్షన్ తనిఖీ చేయండి. మళ్లీ పంపే సమయం వచ్చిన తర్వాత కొత్త కోడ్ కోరండి. ఎస్‌ఎమ్‌ఎస్ పరిమితి ఉంటే తర్వాత ప్రయత్నించండి.',
+            'Choose Forgot password on the sign-in screen and enter your account email. Check your inbox and spam folder for the reset link. Local previews do not send email.',
+            'సైన్ ఇన్ పేజీలో పాస్‌వర్డ్ మర్చిపోయారా ఎంచుకుని మీ ఖాతా ఈమెయిల్ నమోదు చేయండి. రీసెట్ లింక్ కోసం ఇన్‌బాక్స్ మరియు స్పామ్ ఫోల్డర్ చూడండి. స్థానిక ప్రివ్యూలో ఈమెయిల్ పంపబడదు.',
           ),
         ),
         _InfoParagraph(

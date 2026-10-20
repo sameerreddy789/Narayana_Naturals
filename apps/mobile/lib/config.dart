@@ -1,5 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -13,6 +12,7 @@ class AppConfig {
     this.mode, {
     this.emulatorHost = '10.0.2.2',
     this.appCheck = 'off',
+    this.commerceApiUrl = '',
   });
   factory AppConfig.fromEnvironment() {
     const mode = String.fromEnvironment(
@@ -35,13 +35,34 @@ class AppConfig {
         'APP_CHECK_PROVIDER',
         defaultValue: 'off',
       ),
+      commerceApiUrl: const String.fromEnvironment('COMMERCE_API_URL'),
     );
   }
   final BackendMode mode;
   final String emulatorHost;
   final String appCheck;
+  final String commerceApiUrl;
+  Uri get apiUri {
+    final configured = commerceApiUrl.isNotEmpty
+        ? commerceApiUrl
+        : mode == BackendMode.emulator
+        ? 'http://$emulatorHost:5002'
+        : '';
+    final uri = Uri.tryParse(configured);
+    if (uri == null ||
+        !uri.hasAuthority ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        (mode == BackendMode.firebase && uri.scheme != 'https') ||
+        (mode == BackendMode.emulator &&
+            (uri.scheme != 'http' || uri.host != emulatorHost))) {
+      throw const AppFailure('API_NOT_CONFIGURED');
+    }
+    return uri;
+  }
+
   bool get preview => mode != BackendMode.firebase;
-  static const region = 'asia-south1';
   static const projectId = 'narayananaturals-6b5aa';
   static const emulatorProjectId = 'demo-narayana-naturals';
   static const internalBuild = bool.fromEnvironment(
@@ -68,13 +89,10 @@ class AppConfig {
       await FirebaseAuth.instanceFor(
         app: app,
       ).useAuthEmulator(emulatorHost, 9099, automaticHostMapping: false);
-      FirebaseFirestore.instanceFor(
+      FirebaseDatabase.instanceFor(
         app: app,
-      ).useFirestoreEmulator(emulatorHost, 8080, automaticHostMapping: false);
-      FirebaseFunctions.instanceFor(
-        app: app,
-        region: region,
-      ).useFunctionsEmulator(emulatorHost, 5001, automaticHostMapping: false);
+        databaseURL: emulatorDatabaseUrl,
+      ).useDatabaseEmulator(emulatorHost, 9000, automaticHostMapping: false);
     } else if (appCheck != 'off') {
       if (appCheck != 'playIntegrity' && appCheck != 'debug') {
         throw const AppFailure('invalid-backend-mode');
@@ -85,6 +103,16 @@ class AppConfig {
             : const AndroidPlayIntegrityProvider(),
       );
     }
+    final auth = FirebaseAuth.instanceFor(app: app);
+    if (auth.currentUser != null && auth.currentUser!.email == null) {
+      await auth.signOut();
+    }
     return app;
   }
+
+  static const emulatorDatabaseUrl =
+      'https://demo-narayana-naturals-default-rtdb.firebaseio.com';
+  String get databaseUrl => mode == BackendMode.emulator
+      ? emulatorDatabaseUrl
+      : androidOptions.databaseURL!;
 }

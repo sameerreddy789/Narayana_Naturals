@@ -131,8 +131,8 @@ class HomePage extends StatelessWidget {
           title: Text(context.tr('Buying again?', 'మళ్లీ కొనాలనుకుంటున్నారా?')),
           subtitle: Text(
             context.tr(
-              'Your website and app orders share one phone account.',
-              'వెబ్‌సైట్, యాప్ ఆర్డర్‌లు ఒకే ఫోన్ ఖాతాలో ఉంటాయి.',
+              'Your website and app orders share one email account.',
+              'వెబ్‌సైట్, యాప్ ఆర్డర్‌లు ఒకే ఈమెయిల్ ఖాతాలో ఉంటాయి.',
             ),
           ),
           trailing: const Icon(Icons.arrow_forward),

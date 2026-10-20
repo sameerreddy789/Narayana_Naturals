@@ -24,7 +24,9 @@ key.properties
 .idea/
 
 # Backend outputs and local emulator state
-functions/lib/
+backend/lib/
+# Retired Cloud Functions build files may remain locally after migration.
+/functions/
 firebase/emulator-data/
 .firebase/
 artifacts/

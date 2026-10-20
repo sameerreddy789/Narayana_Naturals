@@ -143,7 +143,7 @@ class AppController extends ChangeNotifier {
           .timeout(const Duration(seconds: 20));
       if (!_owns(identity.uid, generation)) return;
       // Clear only guest storage. A previous customer's cart is never exposed
-      // as a guest cart or merged into a different phone account.
+      // as a guest cart or merged into a different email account.
       await store.saveGuestCart([]);
       if (!_owns(identity.uid, generation)) return;
       _applyAccount(value);
@@ -492,7 +492,7 @@ class AppController extends ChangeNotifier {
   Future<PendingCheckout> reviewCheckout(DeliveryAddress delivery) async {
     final identity = user;
     if (identity == null) throw const AppFailure('AUTH_REQUIRED');
-    if (!identity.phoneVerified) throw const AppFailure('PHONE_REQUIRED');
+    if (!identity.emailAccount) throw const AppFailure('EMAIL_REQUIRED');
     if (!accountReady) throw const AppFailure('ACCOUNT_LOADING');
     if (checkoutBusy || pending?.attempted == true) {
       throw const AppFailure('PENDING_CHECKOUT');

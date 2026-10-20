@@ -127,8 +127,8 @@ class ModeBanner extends StatelessWidget {
           child: Text(
             emulator
                 ? context.tr(
-                    'Emulator preview · No real order, SMS or payment',
-                    'ఎమ్యులేటర్ ప్రివ్యూ · నిజమైన ఆర్డర్, ఎస్‌ఎమ్‌ఎస్ లేదా చెల్లింపు లేదు',
+                    'Emulator preview · No real order or payment',
+                    'ఎమ్యులేటర్ ప్రివ్యూ · నిజమైన ఆర్డర్ లేదా చెల్లింపు లేదు',
                   )
                 : context.tr(
                     'Preview · Sample prices. No real order or payment',

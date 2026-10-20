@@ -1,21 +1,26 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:http/http.dart' as http;
 
 class AppFailure implements Exception {
   const AppFailure(this.code);
   factory AppFailure.from(Object error) {
     if (error is AppFailure) return error;
-    if (error is FirebaseFunctionsException) {
-      final details = error.details;
-      final contractCode = details is Map ? details['code'] : null;
-      return AppFailure(contractCode is String ? contractCode : error.code);
-    }
     if (error is FirebaseAuthException) return AppFailure(error.code);
-    if (error is FirebaseException) return AppFailure(error.code);
+    if (error is FirebaseException) {
+      return AppFailure(
+        error.code == 'PERMISSION_DENIED' ? 'permission-denied' : error.code,
+      );
+    }
+    if (error is http.ClientException) return const AppFailure('unavailable');
     if (error is TimeoutException) return const AppFailure('unavailable');
     return const AppFailure('unknown');
+  }
+  factory AppFailure.fromApi(Object? value) {
+    final error = value is Map ? value['error'] : null;
+    final code = error is Map ? error['code'] : null;
+    return AppFailure(code is String ? code : 'unavailable');
   }
   final String code;
 
@@ -32,6 +37,7 @@ class AppFailure implements Exception {
     'QUOTE_OWNER_MISMATCH',
     'COD_UNAVAILABLE',
     'IDEMPOTENCY_CONFLICT',
+    'STORE_CAPACITY',
   }.contains(code);
   String message(String language) {
     final pair = _messages[code] ?? _messages['unknown']!;
@@ -44,16 +50,16 @@ class AppFailure implements Exception {
 
 const _messages = <String, List<String>>{
   'AUTH_REQUIRED': [
-    'Sign in with your phone to continue.',
-    'కొనసాగడానికి మీ ఫోన్‌తో సైన్ ఇన్ చేయండి.',
+    'Sign in with your email to continue.',
+    'కొనసాగడానికి మీ ఈమెయిల్‌తో సైన్ ఇన్ చేయండి.',
   ],
   'unauthenticated': [
-    'Your sign-in expired. Sign in again with the same phone.',
-    'మీ సైన్ ఇన్ గడువు ముగిసింది. అదే ఫోన్‌తో మళ్లీ సైన్ ఇన్ చేయండి.',
+    'Your sign-in expired. Sign in again with the same email.',
+    'మీ సైన్ ఇన్ గడువు ముగిసింది. అదే ఈమెయిల్‌తో మళ్లీ సైన్ ఇన్ చేయండి.',
   ],
-  'PHONE_REQUIRED': [
-    'Verify an Indian mobile number before checkout.',
-    'ఆర్డర్‌కు ముందు భారతీయ మొబైల్ నంబర్‌ను ధృవీకరించండి.',
+  'EMAIL_REQUIRED': [
+    'Sign in with your email account before checkout.',
+    'ఆర్డర్‌కు ముందు మీ ఈమెయిల్ ఖాతాతో సైన్ ఇన్ చేయండి.',
   ],
   'INVALID_INPUT': [
     'Check the address and pack quantities, then try again.',
@@ -84,8 +90,8 @@ const _messages = <String, List<String>>{
     'ఈ చెక్అవుట్ ఇప్పుడు అందుబాటులో లేదు. కొత్త మొత్తాన్ని సమీక్షించండి.',
   ],
   'QUOTE_OWNER_MISMATCH': [
-    'This checkout belongs to another account. Use the original phone account.',
-    'ఈ చెక్అవుట్ మరో ఖాతాకు చెందినది. మొదటి ఫోన్ ఖాతాను ఉపయోగించండి.',
+    'This checkout belongs to another account. Use the original email account.',
+    'ఈ చెక్అవుట్ మరో ఖాతాకు చెందినది. మొదటి ఈమెయిల్ ఖాతాను ఉపయోగించండి.',
   ],
   'COD_UNAVAILABLE': [
     'Cash on delivery is not available for this PIN.',
@@ -123,37 +129,73 @@ const _messages = <String, List<String>>{
     'Enter a valid 10-digit Indian mobile number.',
     'చెల్లుబాటు అయ్యే 10 అంకెల భారతీయ మొబైల్ నంబర్‌ను నమోదు చేయండి.',
   ],
-  'invalid-verification-code': [
-    'The code is incorrect. Check the six digits and try again.',
-    'కోడ్ సరైనది కాదు. ఆరు అంకెలను తనిఖీ చేసి మళ్లీ ప్రయత్నించండి.',
-  ],
-  'session-expired': [
-    'The sign-in code expired. Request a new code.',
-    'సైన్ ఇన్ కోడ్ గడువు ముగిసింది. కొత్త కోడ్‌ను కోరండి.',
-  ],
   'too-many-requests': [
-    'Too many sign-in attempts. Wait before requesting another code.',
-    'ఎక్కువ సైన్ ఇన్ ప్రయత్నాలు జరిగాయి. మరో కోడ్ కోరే ముందు కొద్దిసేపు ఆగండి.',
+    'Too many sign-in attempts. Wait a moment, then try again.',
+    'ఎక్కువ సైన్ ఇన్ ప్రయత్నాలు జరిగాయి. కొద్దిసేపు ఆగి మళ్లీ ప్రయత్నించండి.',
   ],
   'quota-exceeded': [
-    'The SMS limit was reached. Please try later or contact the store.',
-    'ఎస్‌ఎమ్‌ఎస్ పరిమితి చేరుకుంది. తర్వాత ప్రయత్నించండి లేదా స్టోర్‌ను సంప్రదించండి.',
+    'The sign-in limit was reached. Please try later or contact the store.',
+    'సైన్ ఇన్ పరిమితి చేరుకుంది. తర్వాత ప్రయత్నించండి లేదా స్టోర్‌ను సంప్రదించండి.',
   ],
   'operation-not-allowed': [
-    'Phone sign-in is not available yet. Contact the store or try later.',
-    'ఫోన్ సైన్ ఇన్ ఇంకా అందుబాటులో లేదు. తర్వాత ప్రయత్నించండి లేదా స్టోర్‌ను సంప్రదించండి.',
+    'Email sign-in is not available yet. Contact the store or try later.',
+    'ఈమెయిల్ సైన్ ఇన్ ఇంకా అందుబాటులో లేదు. తర్వాత ప్రయత్నించండి లేదా స్టోర్‌ను సంప్రదించండి.',
   ],
   'app-not-authorized': [
-    'This app build is not authorized for phone sign-in. Contact the store.',
-    'ఈ యాప్ వెర్షన్‌కు ఫోన్ సైన్ ఇన్ అనుమతి లేదు. స్టోర్‌ను సంప్రదించండి.',
+    'This app build is not authorized for sign-in. Contact the store.',
+    'ఈ యాప్ వెర్షన్‌కు సైన్ ఇన్ అనుమతి లేదు. స్టోర్‌ను సంప్రదించండి.',
   ],
   'invalid-app-credential': [
-    'Phone verification could not start. Check your connection or contact the store.',
-    'ఫోన్ ధృవీకరణ ప్రారంభం కాలేదు. కనెక్షన్‌ను తనిఖీ చేయండి లేదా స్టోర్‌ను సంప్రదించండి.',
+    'App verification could not start. Check your connection or contact the store.',
+    'యాప్ ధృవీకరణ ప్రారంభం కాలేదు. కనెక్షన్‌ను తనిఖీ చేయండి లేదా స్టోర్‌ను సంప్రదించండి.',
   ],
   'invalid-backend-mode': [
     'This app build has an invalid connection setting.',
     'ఈ యాప్ కనెక్షన్ సెట్టింగ్ సరైనది కాదు.',
+  ],
+  'API_NOT_CONFIGURED': [
+    'Checkout connection is being set up. Your cart is saved; please try again later.',
+    'చెక్అవుట్ కనెక్షన్ సిద్ధమవుతోంది. మీ కార్ట్ సేవ్ అయింది; తర్వాత మళ్లీ ప్రయత్నించండి.',
+  ],
+  'APP_CHECK_REQUIRED': [
+    'App verification could not complete. Refresh or contact the store.',
+    'యాప్ ధృవీకరణ పూర్తి కాలేదు. రిఫ్రెష్ చేయండి లేదా స్టోర్‌ను సంప్రదించండి.',
+  ],
+  'STORE_CAPACITY': [
+    'The store is temporarily unable to accept new orders. Your existing orders are saved.',
+    'స్టోర్ తాత్కాలికంగా కొత్త ఆర్డర్‌లను స్వీకరించలేకపోతోంది. మీ పాత ఆర్డర్‌లు భద్రంగా ఉన్నాయి.',
+  ],
+  'UNAVAILABLE': [
+    'The order service could not complete this request. Retry the same order.',
+    'ఆర్డర్ సేవ ఈ అభ్యర్థన పూర్తి చేయలేకపోయింది. అదే ఆర్డర్‌ను మళ్లీ ప్రయత్నించండి.',
+  ],
+  'invalid-email': [
+    'Enter a valid email address.',
+    'చెల్లుబాటు అయ్యే ఈమెయిల్ చిరునామా నమోదు చేయండి.',
+  ],
+  'invalid-credential': [
+    'Email or password is incorrect. Check them or reset your password.',
+    'ఈమెయిల్ లేదా పాస్‌వర్డ్ సరైనది కాదు. సరిచూడండి లేదా పాస్‌వర్డ్ మార్చుకోండి.',
+  ],
+  'wrong-password': [
+    'Email or password is incorrect. Check them or reset your password.',
+    'ఈమెయిల్ లేదా పాస్‌వర్డ్ సరైనది కాదు. సరిచూడండి లేదా పాస్‌వర్డ్ మార్చుకోండి.',
+  ],
+  'user-not-found': [
+    'Email or password is incorrect. Check them or create an account.',
+    'ఈమెయిల్ లేదా పాస్‌వర్డ్ సరైనది కాదు. సరిచూడండి లేదా ఖాతా సృష్టించండి.',
+  ],
+  'email-already-in-use': [
+    'An account already uses this email. Sign in or reset your password.',
+    'ఈ ఈమెయిల్‌తో ఖాతా ఉంది. సైన్ ఇన్ చేయండి లేదా పాస్‌వర్డ్ మార్చుకోండి.',
+  ],
+  'weak-password': [
+    'Choose a password with at least 8 characters.',
+    'కనీసం 8 అక్షరాల పాస్‌వర్డ్ ఎంచుకోండి.',
+  ],
+  'user-disabled': [
+    'This account is disabled. Contact the store.',
+    'ఈ ఖాతా నిలిపివేయబడింది. స్టోర్‌ను సంప్రదించండి.',
   ],
   'ACCOUNT_LOADING': [
     'Wait for your account and cart to finish loading.',

@@ -15,12 +15,14 @@
     "build": "npm run build --workspace apps/web",
     "typecheck": "npm run typecheck --workspace apps/web",
     "test": "npm run test --workspace apps/web",
-    "backend:install": "npm ci --prefix functions --workspaces=false",
-    "backend:build": "npm run build --prefix functions",
-    "backend:test": "npm run test --prefix functions",
-    "emulators": "firebase emulators:start --project demo-narayana-naturals --only auth,firestore,functions",
-    "emulators:seed": "npm run backend:build && node scripts/seed-emulators.mjs",
-    "test:integration": "firebase emulators:exec --project demo-narayana-naturals --only auth,firestore,functions \"npm --prefix functions run test:integration\""
+    "backend:install": "npm ci --prefix backend --workspaces=false",
+    "backend:build": "npm run build --prefix backend",
+    "backend:test": "npm run test --prefix backend",
+    "backend:start": "node --env-file-if-exists=backend/.env backend/lib/src/index.js",
+    "emulators": "node scripts/start-emulators.mjs",
+    "emulators:save": "firebase emulators:export .local-run/rtdb-emulator-data --force --project demo-narayana-naturals",
+    "emulators:seed": "npm run seed:emulator --prefix backend",
+    "test:integration": "firebase emulators:exec --config firebase.test.json --project demo-narayana-naturals --only auth,database \"npm --prefix backend run test:integration\""
   },
   "devDependencies": {
     "@grpc/grpc-js": "1.14.6",

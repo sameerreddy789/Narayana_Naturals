@@ -11,6 +11,14 @@ Map<String, dynamic> stringMap(Object? value) => value is Map
 int intValue(Object? value, [int fallback = 0]) =>
     value is num && value.isFinite ? value.toInt() : fallback;
 
+DateTime dateValue(Object? value) {
+  if (value is int && value >= 0 && value <= 8640000000000000) {
+    return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+  }
+  return DateTime.tryParse(value?.toString() ?? '') ??
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+}
+
 String money(int paise) => NumberFormat.currency(
   locale: 'en_IN',
   symbol: '₹',
@@ -268,11 +276,11 @@ class DeliveryAddress {
 }
 
 class CustomerIdentity {
-  const CustomerIdentity(this.uid, this.phone);
+  const CustomerIdentity(this.uid, this.email);
   final String uid;
-  final String? phone;
-  bool get phoneVerified =>
-      RegExp(r'^\+91[6-9][0-9]{9}$').hasMatch(phone ?? '');
+  final String? email;
+  bool get emailAccount =>
+      RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email ?? '');
 }
 
 class CustomerProfile {
@@ -379,9 +387,7 @@ class CheckoutQuote {
       totalPaise: intValue(data['totalPaise']),
       codAllowed: data['codAllowed'] == true,
       estimate: data['estimate']?.toString() ?? '',
-      expiresAt:
-          DateTime.tryParse(data['expiresAt']?.toString() ?? '') ??
-          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      expiresAt: dateValue(data['expiresAt']),
       preview: data['preview'] == true,
       lines: (data['lines'] is List ? data['lines'] as List : [])
           .map(OrderLine.fromJson)
@@ -431,9 +437,7 @@ class OrderRecord {
     return OrderRecord(
       id: data['id']?.toString() ?? '',
       uid: data['uid']?.toString() ?? '',
-      createdAt:
-          DateTime.tryParse(data['createdAt']?.toString() ?? '') ??
-          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      createdAt: dateValue(data['createdAt']),
       lines: (data['lines'] is List ? data['lines'] as List : [])
           .map(OrderLine.fromJson)
           .toList(),

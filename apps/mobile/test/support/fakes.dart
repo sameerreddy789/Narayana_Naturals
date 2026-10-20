@@ -9,8 +9,9 @@ import 'package:narayana_naturals/data/local_store.dart';
 import 'package:narayana_naturals/domain/failure.dart';
 import 'package:narayana_naturals/domain/models.dart';
 
-const customerPhone = '+916000000001';
-const otherPhone = '+916000000002';
+const customerEmail = 'customer@narayana.test';
+const previewPassword = 'NarayanaDemo123!';
+const otherEmail = 'other@narayana.test';
 const delivery = DeliveryAddress(
   name: 'Preview Customer',
   phone: '6000000001',
@@ -99,7 +100,7 @@ class MobileFixture {
   }) async {
     final backend = TestingBackend(store);
     if (signedIn && backend.currentUser == null) {
-      await backend.signInPreview(customerPhone);
+      await backend.signInEmail(customerEmail, previewPassword);
     }
     final controller = AppController(backend, store);
     await controller.start();

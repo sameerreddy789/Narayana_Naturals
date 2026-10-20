@@ -1,6 +1,6 @@
 # UX and design brief
 
-Status: recommended direction with a runnable Next.js preview; final visual approval and actual product/Ghani photography are still pending. Product facts live in [PRODUCT.md](../PRODUCT.md); target screen counts live in [SCREEN-MAP.md](SCREEN-MAP.md). Current implemented preview coverage is recorded in [README.md](../README.md).
+Status: recommended direction with a runnable Next.js preview; final visual approval and actual product/Ghani photography are still pending. Product facts live in [PRODUCT.md](../PRODUCT.md); implemented screen counts live in [SCREEN-MAP.md](SCREEN-MAP.md). Current implemented preview coverage is recorded in [README.md](../README.md).
 
 ## Experience and visual direction
 
@@ -34,13 +34,13 @@ Keep surfaces quiet, corners consistent, photography useful, and the order total
 
 First order:
 
-`Home or shared product link → choose pack/quantity → cart → verify phone and address → check PIN and final quote → pay or eligible COD → backend-confirmed result → tracking`
+`Home or shared product link → choose pack/quantity → cart → sign in with email and enter a delivery address → check PIN and final quote → confirm eligible COD → backend-confirmed result → tracking`
 
 Repeat order:
 
 `Sign in on either channel → My orders → Order again → review current stock/prices → refresh address/delivery/payment → new order`
 
-The first-login guide introduces these tasks without forcing an onboarding course. Browsing remains available before sign-in. Checkout verification creates the customer identity without a separate registration form.
+The first-login guide introduces these tasks without forcing an onboarding course. Browsing remains available before sign-in. Email sign-in, account creation and password reset share one authentication screen. A delivery mobile number is collected with the address.
 
 ## Key layout requirements
 
@@ -86,9 +86,9 @@ The cart permits quantity changes and explains that the final delivery quote is 
 Mobile checkout is one short vertical flow; desktop can keep an order summary beside the form. Use address → delivery quote → payment → final review. Preserve entered information after authentication and recoverable errors.
 
 ```text
-Delivery address and verified phone | Items and quantities
+Delivery address and contact phone | Items and quantities
 PIN eligibility / delivery estimate | Item subtotal
-Payment: online or eligible COD     | Shipping and COD fee, if any
+Payment: eligible cash on delivery     | Shipping and COD fee, if any
                                     | Applicable tax treatment / total
 [Review / Pay amount / Place COD order]
 ```
@@ -112,7 +112,7 @@ Behavior:
 1. After the first successful login, offer a short welcome with Start guide and Skip. If sign-in occurred during checkout, defer the welcome overlay until the transaction reaches a safe stopping point; small inline help remains available.
 2. Explain the current page, rather than automatically navigating through every page. Home introduces Shop, language, and Orders. Product introduces pack selection and cart. Cart introduces quantity and checkout. Checkout explains address/PIN, the full total, and payment choice. Orders introduces tracking and reorder. Account introduces preferences, addresses, and guide replay.
 3. Give every customer page type a concise localized introduction. Content/policy pages use a nonblocking tip; commerce pages may have one or two anchored steps with Next, Back, Skip, and Done.
-4. Provide Skip throughout and Replay guide in Help/Account. Tours must not create orders, change quantities, request unnecessary permissions, or cover the payment gateway or OTP controls.
+4. Provide Skip throughout and Replay guide in Help/Account. Tours must not create orders, change quantities, request unnecessary permissions, or cover password entry or order confirmation controls.
 5. Record progress in Firebase by user, surface, and guide version. Website progress follows the customer to another browser; app progress follows them to another app device. Platform-specific guidance is distinct because navigation differs.
 6. Remember a skipped guide as skipped for that version. Replay is explicit. A new guide version does not automatically restart the entire tour on every customer.
 
@@ -132,7 +132,7 @@ The tour is keyboard and screen-reader accessible. If an anchored target is offs
 ## Bilingual and native behavior
 
 - Show English / తెలుగు on every customer page and in app account/navigation access.
-- Translate navigation, page guidance, OTP/error messages, delivery rules, payment states, and policies. Shared content fields keep English/Telugu versions together.
+- Translate navigation, page guidance, account/error messages, delivery rules, payment states, and policies. Shared content fields keep English/Telugu versions together.
 - Save a signed-in language preference in Firebase. Allow a temporary device choice; changing language preserves the current page, selected pack, cart, address form, and order context.
 - Format money as INR and quantities consistently. Permit Telugu customer names/addresses; do not apply Latin-only validation.
 - Android follows Material 3 components, system/predictive Back, 48 dp touch targets, safe window/keyboard insets, and scalable typography.

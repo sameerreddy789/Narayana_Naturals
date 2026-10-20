@@ -113,12 +113,12 @@ class CartPage extends StatelessWidget {
                           'మీ కార్ట్ సేవ్ అవుతోంది…',
                         )
                       : context.tr(
-                          'Your cart syncs with your phone account.',
-                          'మీ కార్ట్ మీ ఫోన్ ఖాతాతో సేవ్ అవుతుంది.',
+                          'Your cart syncs with your email account.',
+                          'మీ కార్ట్ మీ ఈమెయిల్ ఖాతాతో సేవ్ అవుతుంది.',
                         )
                 : context.tr(
-                    'Saved on this device. Sign in at checkout to save it to your phone account.',
-                    'ఈ పరికరంలో సేవ్ అయింది. ఫోన్ ఖాతాలో సేవ్ చేయడానికి చెక్అవుట్‌లో సైన్ ఇన్ చేయండి.',
+                    'Saved on this device. Sign in at checkout to save it to your email account.',
+                    'ఈ పరికరంలో సేవ్ అయింది. ఈమెయిల్ ఖాతాలో సేవ్ చేయడానికి చెక్అవుట్‌లో సైన్ ఇన్ చేయండి.',
                   ),
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -355,7 +355,7 @@ class OrdersPage extends StatelessWidget {
               'మీ ఆర్డర్‌ల కోసం సైన్ ఇన్ చేయండి',
             ),
             body: context.tr(
-              'Use the same phone on the website and app to find all your orders.',
+              'Use the same email on the website and app to find all your orders.',
               'అన్ని ఆర్డర్‌ల కోసం వెబ్‌సైట్, యాప్‌లో ఒకే ఫోన్ ఉపయోగించండి.',
             ),
             action: FilledButton(

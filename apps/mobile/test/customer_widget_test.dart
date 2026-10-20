@@ -44,7 +44,14 @@ void main() {
     await tapVisible(tester, find.byKey(const ValueKey('welcome_skip')));
     await tapVisible(tester, find.byKey(const ValueKey('preview_address')));
     await tapVisible(tester, find.byKey(const ValueKey('address_review')));
-    expect(find.text('Your complete total'), findsOneWidget);
+    expect(
+      find.text('Your complete total'),
+      findsOneWidget,
+      reason: tester
+          .widgetList<Text>(find.byType(Text))
+          .map((text) => text.data ?? '')
+          .join('\n'),
+    );
     expect(find.text('₹480'), findsWidgets);
     await tapVisible(tester, find.byKey(const ValueKey('confirm_cod')));
     expect(find.text('Preview order received'), findsOneWidget);

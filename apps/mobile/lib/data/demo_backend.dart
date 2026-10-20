@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
+import 'package:crypto/crypto.dart';
 
 import '../config.dart';
 import '../domain/failure.dart';
@@ -11,12 +13,15 @@ import 'local_store.dart';
 /// never sends SMS, collects payment, fulfills orders or handles cloud errors.
 class DemoCommerceBackend implements CommerceBackend {
   DemoCommerceBackend(this.store) {
-    final phone = store.read('preview-phone');
-    if (phone is String && RegExp(r'^\+91[6-9][0-9]{9}$').hasMatch(phone)) {
-      _user = CustomerIdentity('preview_${phone.substring(3)}', phone);
+    final email = store.read('preview-email');
+    if (email is String &&
+        RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      _user = CustomerIdentity(_previewUid(email), email);
     }
   }
   final LocalStore store;
+  String _previewUid(String email) =>
+      'preview_${sha256.convert(utf8.encode(email.trim().toLowerCase())).toString().substring(0, 24)}';
   CustomerIdentity? _user;
   final _auth = StreamController<CustomerIdentity?>.broadcast();
   final _changed = StreamController<void>.broadcast();
@@ -352,31 +357,39 @@ class DemoCommerceBackend implements CommerceBackend {
   }
 
   @override
-  Future<void> requestPhoneCode(
-    String phone, {
-    int? resendToken,
-    required void Function(String, int?) codeSent,
-    required void Function(AppFailure) failed,
-    required void Function() authenticated,
-    required void Function() timedOut,
-    required bool Function() acceptCredential,
-  }) async => throw const AppFailure('operation-not-allowed');
-  @override
-  Future<void> confirmPhoneCode(String verificationId, String code) async =>
-      throw const AppFailure('operation-not-allowed');
-  @override
-  Future<void> signInPreview(String phone) async {
-    if (!RegExp(r'^\+91[6-9][0-9]{9}$').hasMatch(phone)) {
-      throw const AppFailure('invalid-phone-number');
+  Future<void> signInEmail(
+    String email,
+    String password, {
+    String? name,
+    bool createAccount = false,
+    String language = 'en',
+  }) async {
+    final normalized = email.trim().toLowerCase();
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(normalized)) {
+      throw const AppFailure('invalid-email');
     }
-    await store.write('preview-phone', phone);
-    _user = CustomerIdentity('preview_${phone.substring(3)}', phone);
+    if (password.length < 8) throw const AppFailure('weak-password');
+    await store.write('preview-email', normalized);
+    _user = CustomerIdentity(_previewUid(normalized), normalized);
+    if (createAccount) {
+      await saveProfile(
+        _user!,
+        CustomerProfile(displayName: name?.trim() ?? '', language: language),
+      );
+    }
     _auth.add(_user);
   }
 
   @override
+  Future<void> resetPassword(String email) async {
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email.trim())) {
+      throw const AppFailure('invalid-email');
+    }
+  }
+
+  @override
   Future<void> signOut() async {
-    await store.write('preview-phone', null);
+    await store.write('preview-email', null);
     _user = null;
     _auth.add(null);
   }

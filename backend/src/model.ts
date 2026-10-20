@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { HttpsError, type FunctionsErrorCode } from 'firebase-functions/v2/https';
 
 export const VARIANT_LITRES = { '1l': 1, '2l': 2, '5l': 5 } as const;
 export type VariantId = keyof typeof VARIANT_LITRES;
@@ -12,33 +11,50 @@ export interface OrderLine extends Line { litres: number; unitPricePaise: number
 export interface QuoteRequest { lines: Line[]; address: Address; channel: Channel }
 export interface QuoteResponse {
   quoteId: string; subtotalPaise: number; shippingPaise: number; totalPaise: number;
-  codAllowed: boolean; estimate: string; expiresAt: string; preview: boolean; lines: OrderLine[];
+  codAllowed: boolean; estimate: string; expiresAt: number; preview: boolean; lines: OrderLine[];
 }
 export interface Order {
-  id: string; uid: string; customerPhone: string; createdAt: string; lines: OrderLine[];
+  id: string; uid: string; customerPhone: string; createdAt: number; lines: OrderLine[];
   address: Address; subtotalPaise: number; shippingPaise: number; totalPaise: number;
   paymentMethod: 'cod'; paymentStatus: 'pending_collection' | 'collected' | 'cancelled';
-  status: OrderStatus; channel: Channel; preview: boolean; updatedAt?: string;
+  status: OrderStatus; channel: Channel; preview: boolean; updatedAt?: number;
 }
-export type MachineCode = 'AUTH_REQUIRED' | 'PHONE_REQUIRED' | 'ADMIN_REQUIRED' | 'INVALID_INPUT'
+export type MachineCode = 'AUTH_REQUIRED' | 'EMAIL_REQUIRED' | 'ADMIN_REQUIRED' | 'INVALID_INPUT'
   | 'STORE_NOT_READY' | 'NOT_SERVICEABLE' | 'OUT_OF_STOCK' | 'QUOTE_EXPIRED' | 'QUOTE_CHANGED'
   | 'QUOTE_NOT_FOUND' | 'QUOTE_OWNER_MISMATCH' | 'COD_UNAVAILABLE' | 'IDEMPOTENCY_CONFLICT'
-  | 'ORDER_NOT_FOUND' | 'INVALID_TRANSITION' | 'RATE_LIMITED';
+  | 'ORDER_NOT_FOUND' | 'INVALID_TRANSITION' | 'RATE_LIMITED' | 'STORE_CAPACITY'
+  | 'APP_CHECK_REQUIRED' | 'ORIGIN_NOT_ALLOWED' | 'UNAVAILABLE';
 
-export function fail(code: MachineCode, message: string, native: FunctionsErrorCode = 'failed-precondition'): never {
-  throw new HttpsError(native, message, { code });
+export class ApiError extends Error {
+  constructor(public readonly code: MachineCode, message: string, public readonly nativeCode = 'failed-precondition') {
+    super(message);
+    this.name = 'ApiError';
+  }
+  get status(): number {
+    if (this.nativeCode === 'unauthenticated') return 401;
+    if (this.nativeCode === 'permission-denied') return 403;
+    if (this.nativeCode === 'invalid-argument') return 400;
+    if (this.nativeCode === 'not-found') return 404;
+    if (this.nativeCode === 'resource-exhausted') return 429;
+    if (this.code === 'UNAVAILABLE') return 503;
+    return 409;
+  }
+}
+export function fail(code: MachineCode, message: string, native = 'failed-precondition'): never {
+  throw new ApiError(code, message, native);
 }
 export function requireActor(actor: Actor | undefined): Actor {
-  if (!actor?.uid) fail('AUTH_REQUIRED', 'Sign in before continuing.', 'unauthenticated');
+  if (!actor?.uid || !/^[A-Za-z0-9_-]{1,128}$/.test(actor.uid)) fail('AUTH_REQUIRED', 'Sign in before continuing.', 'unauthenticated');
   return actor;
 }
-export function requirePhone(actor: Actor | undefined): Actor & { phone: string } {
+export function requireEmail(actor: Actor | undefined): Actor & { email: string } {
   const signedIn = requireActor(actor);
-  const phone = signedIn.token.phone_number;
-  if (typeof phone !== 'string' || !/^\+91[6-9][0-9]{9}$/.test(phone)) {
-    fail('PHONE_REQUIRED', 'Verify an Indian mobile number before checkout.', 'failed-precondition');
+  const email = signedIn.token.email;
+  const provider = (signedIn.token.firebase as { sign_in_provider?: unknown } | undefined)?.sign_in_provider;
+  if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || provider !== 'password') {
+    fail('EMAIL_REQUIRED', 'Sign in with your email account before checkout.');
   }
-  return { ...signedIn, phone };
+  return { ...signedIn, email };
 }
 export function requireAdmin(actor: Actor | undefined): Actor {
   const signedIn = requireActor(actor);

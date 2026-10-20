@@ -1,65 +1,136 @@
 # Commerce contract v1
 
-Next.js and Flutter use this same contract. Callable Functions are in `asia-south1` and every mutation requires Firebase Authentication. All money is an integer number of **paise**, currency is INR, variant identifiers are `1l`, `2l`, `5l`, and API/order times are ISO-8601 UTC strings. The function name is the contract version boundary for this first implementation; breaking changes need new names or an explicit version migration.
+Next.js, Flutter and the Node API use the same wire contract.
+Money is an integer number of **paise**, currency INR, and variants are
+`1l`, `2l`, `5l`. RTDB/API times are integer epoch milliseconds.
+The website converts those times to ISO strings inside its UI only.
 
-## Public and customer documents
+The API version boundary is `/v1/`. Validate the payload against the
+named definitions in [schema.json](schema.json). Runtime validation also
+checks unique pack IDs, matching variant volumes, arithmetic and ownership.
 
-| Path | Shape and access |
+## Data paths and permissions
+
+| Path | Shape/access |
 | --- | --- |
-| `products/groundnut-oil` | `{published, name:{en,te}, description:{en,te}, ingredients:{en,te}, extraction:{en,te}, storage:{en,te}}`. Only published products are customer readable. |
-| `products/groundnut-oil/variants/{id}` | `{id, litres, pricePaise, stock, enabled}`. `stock` is a server-maintained available-pack projection; clients cannot write prices or stock. |
-| `publicContent/storefront` | `{orderingEnabled, onlinePaymentsEnabled:false, preview, supportPhone?, notice:{en,te}?}`. Missing/disabled settings prevent checkout. Sample data works only in emulators. |
-| `deliveryRules/{pin}` | `{enabled,local,feePaise,extraLitrePaise?,includedLitres?,codAllowed,estimate}`. `estimate` is a short display string; exact six-digit PIN rules, never an unchecked nationwide wildcard. |
-| `users/{uid}` | `{displayName,phoneNumber,language}`. `phoneNumber` must equal the verified `+91…` Auth number; `language` is `en` or `te`. No client roles. |
-| `users/{uid}/addresses/default` | `{name,phone,street,city,pin}`. `phone` is ten Indian mobile digits; `pin` is six digits. Unicode names/addresses accepted. |
-| `carts/{uid}` | `{lines:[{id,quantity}],updatedAt}`. Unique IDs, quantity 1–20, at most three entries; `updatedAt` is a Firestore `serverTimestamp()`. Prices/totals cannot be stored here. |
-| `users/{uid}/onboarding/{web-v1\|android-v1}` | `{welcomeSeen,skipped,dismissedPages}`. Guide progress belongs to the authenticated user. |
-| `orders/{id}` | `{id,uid,customerPhone,createdAt,lines,address,subtotalPaise,shippingPaise,totalPaise,paymentMethod:'cod',paymentStatus:'pending_collection'\|'collected'\|'cancelled',status,channel,preview}`. Readable by the order owner or an `admin:true` claimant; all writes are server-only. |
+| `commerce/products/groundnut-oil` | Published bilingual product facts; public read when published |
+| `commerce/variants/{id}` | `{id,litres,pricePaise,stock,enabled,preview?}`; public read, server write |
+| `commerce/publicContent/storefront` | `{orderingEnabled,onlinePaymentsEnabled:false,preview,supportPhone?,notice?}` |
+| `commerce/deliveryRules/{pin}` | `{enabled,local,feePaise,extraLitrePaise?,includedLitres?,codAllowed,estimate,preview?}` |
+| `users/{uid}/profile` | `{displayName,email,language,phoneNumber?}`; own UID only; email matches Auth token |
+| `users/{uid}/addresses/default` | `{name,phone,street,city,pin}`; own UID read/write |
+| `users/{uid}/onboarding/{web-v1\|android-v1}` | `{welcomeSeen,skipped,dismissedPages?}`; own UID only |
+| `carts/{uid}` | `{lines?,updatedAt}`; own UID read/write; unique pack quantities 1–20 |
+| `commerce/ordersByUser/{uid}/{orderId}` | Customer/owner read; server-only write |
+| `commerce/orderIndex/{orderId}` | Trusted owner read; server-only write |
+| `commerce/quotes/{quoteId}` | Private server quote |
+| `commerce/idempotency/{hash}` | Private durable retry receipt |
+| `commerce/limits/{hash}` | Private request limit record |
 
-Order line shape: `{id,quantity,litres,unitPricePaise}`. Order address shape is the saved-address shape above. Statuses are `received`, `packed`, `shipped`, `delivered`, `cancelled`; channels are `web` or `android`. `createdAt` is server-authored and sortable as an ISO UTC string. An order is an immutable purchase-time snapshot except for authorized status/payment metadata. Catalogue/address edits do not rewrite its purchase facts.
+RTDB removes null/empty children. An empty cart may therefore contain only
+`updatedAt`; an empty guide has no `dismissedPages`. Clients normalize
+omitted/null children to empty lists. Cart update times use the database
+server timestamp sentinel. Arrays use indexed children under RTDB.
 
-Customers query orders with `where('uid','==',auth.uid)`, `orderBy('createdAt','desc')`, and `limit(50)` (or another limit of at most 100). Owners query a bounded list with `orderBy('createdAt','desc')` and `limit(100)`. Unbounded order lists are denied. Auth custom claim `{admin:true}` is provisioned using trusted Admin SDK tooling; a document/profile field never grants access.
+Customer history subscriptions order by `createdAt` and take the latest
+50 records; the owner index takes the latest 100. Rules scope history to UID
+and owner index to `admin:true`. These are client bounds; personal history
+reads are permitted at the customer's node rather than a query-enforced cap.
 
-Emulator fixture catalogue, variant, private inventory and delivery documents carry an additional `preview:true` marker. Checkout rejects **any** preview marker outside the Functions emulator, even if the storefront marker was cleared. Every emulator order is labelled preview. Catalogue `stock` is the public projection of server-only `_inventory/{id}.availablePacks`; clients cannot read that private collection. Onboarding page IDs are distinct nonempty strings of at most 64 characters, with at most 20 dismissed pages.
+Profiles use email/password identity. Optional profile phones and
+`address.phone` are delivery contacts, not verified Auth phone numbers.
+Order `customerPhone` is `+91` plus the ten-digit address phone.
+Unicode names/addresses are accepted with length/control-character validation.
 
-## Callables
+Product facts use bilingual `{en,te}` fields for name, description,
+ingredients, extraction and storage. A configured support phone uses
+international Indian digits for WhatsApp/call. Preview records cannot
+authorize live purchases.
 
-| Function | Request | Response |
+## HTTP operations
+
+Send `Content-Type: application/json` and
+`Authorization: Bearer <Firebase ID token>`. Live requests additionally send
+`X-Firebase-AppCheck`. The request and successful response envelopes are
+`{"data": <payload>}`.
+
+| POST endpoint | Request | Response payload |
 | --- | --- | --- |
-| `quoteCheckout` | `{lines:[{id,quantity}],address,channel}` | `{quoteId,subtotalPaise,shippingPaise,totalPaise,codAllowed,estimate,expiresAt,preview,lines}` |
-| `placeCodOrder` | `{quoteId,idempotencyKey}` | `{orderId}` |
-| `updateVariant` | `{id,pricePaise,stock,enabled}` | `{id}`; admin claim required |
-| `updateOrderStatus` | `{orderId,status}` | `{orderId,status}`; admin claim required |
+| `/v1/quoteCheckout` | `{lines,address,channel}` | `{quoteId,subtotalPaise,shippingPaise,totalPaise,codAllowed,estimate,expiresAt,preview,lines}` |
+| `/v1/placeCodOrder` | `{quoteId,idempotencyKey}` | `{orderId}` |
+| `/v1/updateVariant` | `{id,pricePaise,stock,enabled}` | `{id}`; owner claim required |
+| `/v1/updateOrderStatus` | `{orderId,status}` | `{orderId,status}`; owner claim required |
 
-Quotes require a verified Indian Firebase Auth phone number. They last **ten minutes**, belong to that UID, and do not reserve stock. `placeCodOrder` checks the quote owner, expiry, current product/price/delivery settings and stock in one Firestore transaction. Changed terms return `QUOTE_CHANGED` and require a new visible quote. The same quote can create only one order. `idempotencyKey` is a stable 8–128 character identifier (`[A-Za-z0-9_-]`); retain it during retries. A used key cannot be rebound to another quote. Retrying a completed operation returns the original order even after quote expiry.
+`GET /health` returns connection/configuration status. It does not validate
+the whole catalogue or authorize checkout.
 
-Server totals are authoritative. Shipping is `feePaise + max(0,totalLitres - includedLitres) * extraLitrePaise`, with omitted surcharge fields treated as zero. Stock is counted in **packs**, not litres. COD is the only implemented payment path. A missing merchant integration must never result in an online-payment success label.
+A quote requires an email/password Firebase token, lasts ten minutes, belongs
+to its UID and does not reserve stock. Place-order rechecks current product,
+price, PIN delivery terms and stock in one transaction at `/commerce`.
+Changed terms require a new quote that the customer can review.
 
-Order creation does not mutate `carts/{uid}`. Once `{orderId}` confirms success, each client transactionally removes only the purchased lines whose quantities still match the reviewed purchase snapshot. Later edits and unrelated packs survive. The persisted cart contains `{lines:remainingLines,updatedAt:serverTimestamp()}` and the local cart reflects the merged result. An ancillary cart-sync failure must not discard the successful order result or replace its stable retry key.
+Each order contains ID/UID, server creation time, immutable purchase-time
+lines/address/totals, `paymentMethod:'cod'`, payment/fulfillment status,
+source `channel:'web'|'android'` and a preview flag.
+Both customer and owner order copies are written atomically with stock and
+retry receipt. Authorized fulfillment updates add server `updatedAt`.
 
-Order transitions: `received → packed → shipped → delivered`; `received` or `packed` may become `cancelled`. Cancellation restores packed stock exactly once. Shipped/delivered orders cannot be cancelled by this function; physical returns and refunds require a future explicit workflow. COD becomes `collected` on `delivered`; cancellation becomes payment status `cancelled`.
+Shipping is
+`feePaise + max(0,totalLitres - includedLitres) * extraLitrePaise`.
+Omitted surcharge fields default to zero. Stock counts packs, not litres.
+COD is the only implemented payment path.
 
-## Errors
+## Safe retries and cart cleanup
 
-Catch Firebase's callable error and read `error.details.code`; translate in each client. Native Firebase `unauthenticated`/`permission-denied` errors remain meaningful if no details are present.
+Retain a stable quote ID and 8–128 character retry key
+(`[A-Za-z0-9_-]`) before submitting. A completed key returns its original
+order even after quote expiry or a backend restart. A key cannot be rebound
+to another quote; a consumed quote cannot create another order.
 
-| Machine code | Meaning |
+An ambiguous timeout keeps the original checkout reference. A definitive
+quote/input/stock/configuration/capacity rejection can clear an unconfirmed
+review so the customer can review a fresh quote.
+
+Order creation does not write the cart. Once confirmed, clients transactionally
+remove only purchased pack quantities that still match the reviewed snapshot.
+Later quantities and unrelated packs survive. Ancillary cleanup failure does
+not erase the successful order or its durable recovery reference.
+
+Fulfillment is `received → packed → shipped → delivered`.
+Received/Packed can become Cancelled, restoring packs exactly once.
+Delivered COD becomes Collected; cancellation has no COD due.
+Shipped/Delivered cancellation and financial returns need a future workflow.
+
+## Errors and capacity
+
+Error envelope:
+`{"error":{"code":"MACHINE_CODE","message":"...","details":{"nativeCode":"..."}}}`.
+Clients translate machine codes and retain safe retry state for uncertain
+failures. Auth/rule/transport errors remain meaningful without an API envelope.
+
+| Code | Meaning |
 | --- | --- |
-| `AUTH_REQUIRED` | Sign in first. |
-| `PHONE_REQUIRED` | A verified Indian phone is required. |
-| `ADMIN_REQUIRED` | This operation requires the owner claim. |
-| `INVALID_INPUT` | Invalid fields, quantities, address or identifiers. |
-| `STORE_NOT_READY` | Ordering disabled, setup missing, or sample configuration used outside an emulator. |
-| `NOT_SERVICEABLE` | No enabled delivery rule for the exact PIN. |
-| `OUT_OF_STOCK` | A pack is disabled, unpublished or unavailable. |
-| `QUOTE_EXPIRED` | Review a new quote. |
-| `QUOTE_CHANGED` | Prices/delivery terms changed; review a new quote. |
-| `QUOTE_NOT_FOUND` | Quote is missing. |
-| `QUOTE_OWNER_MISMATCH` | Quote belongs to another account. |
-| `COD_UNAVAILABLE` | This PIN does not support COD. |
-| `IDEMPOTENCY_CONFLICT` | Retry key was already used for another quote. |
-| `ORDER_NOT_FOUND` | Order does not exist. |
-| `INVALID_TRANSITION` | Unsupported order status change. |
-| `RATE_LIMITED` | Wait before making more checkout requests. |
+| `AUTH_REQUIRED` | Firebase sign-in missing/invalid |
+| `EMAIL_REQUIRED` | Checkout requires email/password provider |
+| `ADMIN_REQUIRED` | Trusted owner claim required |
+| `APP_CHECK_REQUIRED` | Live application verification failed/missing |
+| `ORIGIN_NOT_ALLOWED` | Website origin is outside the CORS allowlist |
+| `INVALID_INPUT` | Invalid/missing/unexpected fields |
+| `STORE_NOT_READY` | Ordering/configuration missing or live preview markers |
+| `NOT_SERVICEABLE` | Exact PIN has no enabled delivery rule |
+| `OUT_OF_STOCK` | Product/pack unavailable or insufficient stock |
+| `QUOTE_EXPIRED`, `QUOTE_CHANGED` | Review a fresh quote |
+| `QUOTE_NOT_FOUND`, `QUOTE_OWNER_MISMATCH` | Missing/foreign quote |
+| `COD_UNAVAILABLE` | PIN does not permit COD |
+| `IDEMPOTENCY_CONFLICT` | Retry key already bound to another quote |
+| `ORDER_NOT_FOUND`, `INVALID_TRANSITION` | Missing order/unsupported status change |
+| `RATE_LIMITED` | Per-account operation limit exceeded |
+| `STORE_CAPACITY` | Bounded ledger requires a capacity upgrade |
+| `UNAVAILABLE` | Unknown service/transport result; retry safely |
 
-The full wire schema is in `schema.json`. Emulator seed prices, stock and local/nationwide PIN examples are explicitly illustrative and never published to the real Firebase project by the seed script.
+The initial ledger limits are 500 orders, 2,000 receipts, 750 quote records,
+1,000 limit records and 4 MiB JSON. It uses full-ledger transactions and is
+intended for a small initial store. Completed receipts/consumed quotes remain
+durable; capacity errors do not silently erase purchase history. Expired
+unconsumed quotes are pruned after a grace period. Scaling/retention needs
+a migration that preserves deduplication.

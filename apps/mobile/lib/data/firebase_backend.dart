@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import '../config.dart';
 import '../domain/failure.dart';
@@ -11,22 +14,22 @@ import '../domain/models.dart';
 import 'backend.dart';
 
 class FirebaseCommerceBackend implements CommerceBackend {
-  FirebaseCommerceBackend(FirebaseApp app, this.mode)
+  FirebaseCommerceBackend(this.app, this.config)
     : auth = FirebaseAuth.instanceFor(app: app),
-      db = FirebaseFirestore.instanceFor(app: app),
-      functions = FirebaseFunctions.instanceFor(
+      db = FirebaseDatabase.instanceFor(
         app: app,
-        region: AppConfig.region,
+        databaseURL: config.databaseUrl,
       );
+  final FirebaseApp app;
+  final AppConfig config;
   @override
-  final BackendMode mode;
+  BackendMode get mode => config.mode;
   final FirebaseAuth auth;
-  final FirebaseFirestore db;
-  final FirebaseFunctions functions;
+  final FirebaseDatabase db;
   @override
   CustomerIdentity? get currentUser => _identity(auth.currentUser);
   CustomerIdentity? _identity(User? user) =>
-      user == null ? null : CustomerIdentity(user.uid, user.phoneNumber);
+      user == null ? null : CustomerIdentity(user.uid, user.email);
   @override
   Stream<CustomerIdentity?> authChanges() =>
       auth.authStateChanges().map(_identity);
@@ -34,93 +37,103 @@ class FirebaseCommerceBackend implements CommerceBackend {
     if (auth.currentUser?.uid != uid) throw const AppFailure('AUTH_REQUIRED');
   }
 
-  DocumentReference<Map<String, dynamic>> _user(String uid) =>
-      db.collection('users').doc(uid);
-  Query<Map<String, dynamic>> _orders(String uid) => db
-      .collection('orders')
-      .where('uid', isEqualTo: uid)
-      .orderBy('createdAt', descending: true)
-      .limit(50);
+  Future<void> _connected() async {
+    await db
+        .ref('.info/connected')
+        .onValue
+        .firstWhere((event) => event.snapshot.value == true)
+        .timeout(const Duration(seconds: 15));
+  }
+
+  Future<DataSnapshot> _read(Query query) async {
+    var stage = 'connect';
+    try {
+      await _connected();
+      stage = 'query';
+      final result = await query.get().timeout(const Duration(seconds: 15));
+      stage = 'connection-check';
+      // Native listeners may initially emit false while they attach. Wait
+      // for a confirmed connection instead of treating that first event as
+      // a failure after an otherwise successful server read.
+      await _connected();
+      return result;
+    } catch (error) {
+      if (config.mode == BackendMode.emulator && AppConfig.internalBuild) {
+        final code = error is FirebaseException ? error.code : error.runtimeType;
+        debugPrint('NN_RTDB_READ_ERROR stage=$stage code=$code');
+      }
+      rethrow;
+    }
+  }
+
+  Query _orders(String uid) => db
+      .ref('commerce/ordersByUser/$uid')
+      .orderByChild('createdAt')
+      .limitToLast(50);
+  List<OrderRecord> _parseOrders(DataSnapshot snapshot) =>
+      snapshot.children
+          .map((value) => OrderRecord.fromJson(value.value))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   @override
   Stream<Catalogue> catalogueChanges() {
-    final subscriptions = <StreamSubscription<dynamic>>[];
-    DocumentSnapshot<Map<String, dynamic>>? product;
-    DocumentSnapshot<Map<String, dynamic>>? settings;
-    QuerySnapshot<Map<String, dynamic>>? variants;
+    final subscriptions = <StreamSubscription<DatabaseEvent>>[];
+    final values = <String, Object?>{};
+    bool connected = false;
     late StreamController<Catalogue> result;
     void emit() {
-      if (product == null ||
-          settings == null ||
-          variants == null ||
-          result.isClosed) {
+      if (result.isClosed ||
+          !['product', 'variants', 'settings'].every(values.containsKey)) {
         return;
       }
-      try {
-        result.add(
-          Catalogue(
-            product: product!.data()?['published'] == true
-                ? Product.fromJson(product!.data())
-                : null,
-            variants:
-                variants!.docs
-                    .where((doc) => variantIds.contains(doc.id))
-                    .map((doc) => Variant.fromJson(doc.id, doc.data()))
-                    .toList()
-                  ..sort((a, b) => a.litres.compareTo(b.litres)),
-            settings: StoreSettings.fromJson(settings!.data()),
-            fromCache:
-                product!.metadata.isFromCache ||
-                settings!.metadata.isFromCache ||
-                variants!.metadata.isFromCache,
-          ),
-        );
-      } catch (error) {
-        if (!result.isClosed) result.addError(AppFailure.from(error));
-      }
+      final product = stringMap(values['product']);
+      final variants = stringMap(values['variants']);
+      result.add(
+        Catalogue(
+          product: product['published'] == true
+              ? Product.fromJson(product)
+              : null,
+          variants:
+              variants.entries
+                  .where((entry) => variantIds.contains(entry.key))
+                  .map((entry) => Variant.fromJson(entry.key, entry.value))
+                  .toList()
+                ..sort((a, b) => a.litres.compareTo(b.litres)),
+          settings: StoreSettings.fromJson(values['settings']),
+          fromCache: !connected,
+        ),
+      );
     }
 
-    void fail(Object error) {
+    void failure(Object error) {
       if (!result.isClosed) result.addError(AppFailure.from(error));
     }
 
     result = StreamController<Catalogue>(
       onListen: () {
         subscriptions.add(
-          db
-              .collection('products')
-              .doc('groundnut-oil')
-              .snapshots(includeMetadataChanges: true)
-              .listen((value) {
-                product = value;
-                emit();
-              }, onError: fail),
+          db.ref('.info/connected').onValue.listen((event) {
+            connected = event.snapshot.value == true;
+            emit();
+          }, onError: failure),
         );
-        subscriptions.add(
-          db
-              .collection('products')
-              .doc('groundnut-oil')
-              .collection('variants')
-              .snapshots(includeMetadataChanges: true)
-              .listen((value) {
-                variants = value;
-                emit();
-              }, onError: fail),
-        );
-        subscriptions.add(
-          db
-              .collection('publicContent')
-              .doc('storefront')
-              .snapshots(includeMetadataChanges: true)
-              .listen((value) {
-                settings = value;
-                emit();
-              }, onError: fail),
-        );
+        for (final entry in {
+          'product': 'commerce/products/groundnut-oil',
+          'variants': 'commerce/variants',
+          'settings': 'commerce/publicContent/storefront',
+        }.entries) {
+          subscriptions.add(
+            db.ref(entry.value).onValue.listen((event) {
+              values[entry.key] = event.snapshot.value;
+              emit();
+            }, onError: failure),
+          );
+        }
       },
       onCancel: () async {
-        for (final subscription in subscriptions) {
-          await subscription.cancel();
+        for (final sub in subscriptions) {
+          await sub.cancel();
         }
       },
     );
@@ -134,127 +147,103 @@ class FirebaseCommerceBackend implements CommerceBackend {
     String language,
   ) async {
     _requireUid(identity.uid);
-    // A transaction reads the current server cart before the guest merge. No
-    // writes can run from a guessed empty cart during account switching.
-    final cart = await db.runTransaction<List<CartLine>>((transaction) async {
-      _requireUid(identity.uid);
-      final ref = db.collection('carts').doc(identity.uid);
-      final saved = await transaction.get(ref);
-      final merged = mergeCarts(parseCart(saved.data()?['lines']), guest);
-      if (guest.isNotEmpty) {
-        transaction.set(ref, {
+    await _connected();
+    final cartRef = db.ref('carts/${identity.uid}');
+    List<CartLine> cart;
+    if (guest.isNotEmpty) {
+      final transaction = await cartRef.runTransaction((value) {
+        _requireUid(identity.uid);
+        final merged = mergeCarts(parseCart(stringMap(value)['lines']), guest);
+        return Transaction.success({
           'lines': merged.map((line) => line.toJson()).toList(),
-          'updatedAt': FieldValue.serverTimestamp(),
+          'updatedAt': ServerValue.timestamp,
         });
-      }
-      return merged;
-    });
-    const server = GetOptions(source: Source.server);
+      }, applyLocally: false);
+      if (!transaction.committed) throw const AppFailure('unavailable');
+      cart = parseCart(stringMap(transaction.snapshot.value)['lines']);
+    } else {
+      cart = parseCart(stringMap((await _read(cartRef)).value)['lines']);
+    }
+    final uid = identity.uid;
     final values = await Future.wait([
-      _user(identity.uid).get(server),
-      _user(identity.uid).collection('addresses').doc('default').get(server),
-      _user(
-        identity.uid,
-      ).collection('onboarding').doc('android-v1').get(server),
+      _read(db.ref('users/$uid/profile')),
+      _read(db.ref('users/$uid/addresses/default')),
+      _read(db.ref('users/$uid/onboarding/android-v1')),
+      _read(_orders(uid)),
     ]);
-    final orders = await _orders(identity.uid).get(server);
-    _requireUid(identity.uid);
+    _requireUid(uid);
     return AccountSnapshot(
       profile: values[0].exists
-          ? CustomerProfile.fromJson(values[0].data())
+          ? CustomerProfile.fromJson(values[0].value)
           : CustomerProfile(language: language),
       address: values[1].exists
-          ? DeliveryAddress.fromJson(values[1].data())
+          ? DeliveryAddress.fromJson(values[1].value)
           : null,
-      guide: GuideProgress.fromJson(values[2].data()),
+      guide: GuideProgress.fromJson(values[2].value),
       cart: cart,
-      orders: orders.docs
-          .map((doc) => OrderRecord.fromJson(doc.data()))
-          .toList(),
+      orders: _parseOrders(values[3]),
     );
   }
 
   @override
   Stream<AccountSnapshot> accountChanges(CustomerIdentity identity) {
-    final subscriptions = <StreamSubscription<dynamic>>[];
-    DocumentSnapshot<Map<String, dynamic>>? profile, address, guide, cart;
-    QuerySnapshot<Map<String, dynamic>>? orders;
+    final subscriptions = <StreamSubscription<DatabaseEvent>>[];
+    final values = <String, DataSnapshot>{};
     late StreamController<AccountSnapshot> result;
-    void emit() {
-      if ([
-            profile,
-            address,
-            guide,
-            cart,
-            orders,
-          ].any((value) => value == null) ||
-          result.isClosed) {
-        return;
-      }
-      try {
-        result.add(
-          AccountSnapshot(
-            profile: CustomerProfile.fromJson(profile!.data()),
-            address: address!.exists
-                ? DeliveryAddress.fromJson(address!.data())
-                : null,
-            guide: GuideProgress.fromJson(guide!.data()),
-            cart: parseCart(cart!.data()?['lines']),
-            orders: orders!.docs
-                .map((doc) => OrderRecord.fromJson(doc.data()))
-                .toList(),
-          ),
-        );
-      } catch (error) {
-        if (!result.isClosed) result.addError(AppFailure.from(error));
-      }
-    }
-
-    void fail(Object error) {
+    void failure(Object error) {
       if (!result.isClosed) result.addError(AppFailure.from(error));
     }
 
+    void emit() {
+      if (result.isClosed ||
+          ![
+            'profile',
+            'address',
+            'guide',
+            'cart',
+            'orders',
+          ].every(values.containsKey)) {
+        return;
+      }
+      try {
+        _requireUid(identity.uid);
+        result.add(
+          AccountSnapshot(
+            profile: CustomerProfile.fromJson(values['profile']!.value),
+            address: values['address']!.exists
+                ? DeliveryAddress.fromJson(values['address']!.value)
+                : null,
+            guide: GuideProgress.fromJson(values['guide']!.value),
+            cart: parseCart(stringMap(values['cart']!.value)['lines']),
+            orders: _parseOrders(values['orders']!),
+          ),
+        );
+      } catch (error) {
+        failure(error);
+      }
+    }
+
+    final uid = identity.uid;
     result = StreamController<AccountSnapshot>(
       onListen: () {
-        final user = _user(identity.uid);
-        subscriptions.add(
-          user.snapshots().listen((value) {
-            profile = value;
-            emit();
-          }, onError: fail),
-        );
-        subscriptions.add(
-          user.collection('addresses').doc('default').snapshots().listen((
-            value,
-          ) {
-            address = value;
-            emit();
-          }, onError: fail),
-        );
-        subscriptions.add(
-          user.collection('onboarding').doc('android-v1').snapshots().listen((
-            value,
-          ) {
-            guide = value;
-            emit();
-          }, onError: fail),
-        );
-        subscriptions.add(
-          db.collection('carts').doc(identity.uid).snapshots().listen((value) {
-            cart = value;
-            emit();
-          }, onError: fail),
-        );
-        subscriptions.add(
-          _orders(identity.uid).snapshots().listen((value) {
-            orders = value;
-            emit();
-          }, onError: fail),
-        );
+        for (final entry in <String, Query>{
+          'profile': db.ref('users/$uid/profile'),
+          'address': db.ref('users/$uid/addresses/default'),
+          'guide': db.ref('users/$uid/onboarding/android-v1'),
+          'cart': db.ref('carts/$uid'),
+          'orders': _orders(uid),
+        }.entries) {
+          subscriptions.add(
+            entry.value.onValue.listen((event) {
+              values[entry.key] = event.snapshot;
+              emit();
+            }, onError: failure),
+          );
+        }
       },
       onCancel: () async {
-        for (final subscription in subscriptions) {
-          await subscription.cancel();
+        for (final sub in subscriptions) {
+          await sub.cancel();
         }
       },
     );
@@ -269,30 +258,29 @@ class FirebaseCommerceBackend implements CommerceBackend {
     List<CartLine>? acknowledged,
   }) async {
     _requireUid(uid);
-    return db.runTransaction((transaction) async {
+    await _connected();
+    final result = await db.ref('carts/$uid').runTransaction((value) {
       _requireUid(uid);
-      final ref = db.collection('carts').doc(uid);
-      final saved = await transaction.get(ref);
       final merged = applyCartEdit(
-        parseCart(saved.data()?['lines']),
+        parseCart(stringMap(value)['lines']),
         before,
         lines,
         acknowledged: acknowledged,
       );
-      transaction.set(ref, {
+      return Transaction.success({
         'lines': merged.map((line) => line.toJson()).toList(),
-        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': ServerValue.timestamp,
       });
-      return merged;
-    });
+    }, applyLocally: false);
+    if (!result.committed) throw const AppFailure('unavailable');
+    return parseCart(stringMap(result.snapshot.value)['lines']);
   }
 
   @override
   Future<void> saveAddress(String uid, DeliveryAddress address) async {
     _requireUid(uid);
-    await _user(
-      uid,
-    ).collection('addresses').doc('default').set(address.toJson());
+    await _connected();
+    await db.ref('users/$uid/addresses/default').set(address.toJson());
   }
 
   @override
@@ -301,9 +289,10 @@ class FirebaseCommerceBackend implements CommerceBackend {
     CustomerProfile profile,
   ) async {
     _requireUid(identity.uid);
-    await _user(identity.uid).set({
+    await _connected();
+    await db.ref('users/${identity.uid}/profile').set({
       'displayName': profile.displayName,
-      'phoneNumber': identity.phone,
+      'email': identity.email,
       'language': profile.language,
     });
   }
@@ -311,42 +300,89 @@ class FirebaseCommerceBackend implements CommerceBackend {
   @override
   Future<void> saveGuide(String uid, GuideProgress guide) async {
     _requireUid(uid);
-    await _user(
-      uid,
-    ).collection('onboarding').doc('android-v1').set(guide.toJson());
+    await _connected();
+    final result = await db
+        .ref('users/$uid/onboarding/android-v1')
+        .runTransaction((value) {
+          _requireUid(uid);
+          final previous = GuideProgress.fromJson(value);
+          final replay =
+              !guide.welcomeSeen &&
+              !guide.skipped &&
+              guide.dismissedPages.isEmpty;
+          return Transaction.success(
+            GuideProgress(
+              welcomeSeen: guide.welcomeSeen,
+              skipped: guide.skipped,
+              dismissedPages: replay
+                  ? []
+                  : {
+                      ...previous.dismissedPages,
+                      ...guide.dismissedPages,
+                    }.toList(),
+            ).toJson(),
+          );
+        }, applyLocally: false);
+    if (!result.committed) throw const AppFailure('unavailable');
+  }
+
+  Future<Object?> _api(String method, Object data) async {
+    final user = auth.currentUser;
+    if (user == null) throw const AppFailure('AUTH_REQUIRED');
+    final base = config.apiUri.toString().replaceFirst(RegExp(r'/$'), '');
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${await user.getIdToken()}',
+    };
+    if (mode == BackendMode.firebase && config.appCheck != 'off') {
+      final token = await FirebaseAppCheck.instanceFor(app: app).getToken();
+      if (token != null) headers['X-Firebase-AppCheck'] = token;
+    }
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$base/v1/$method'),
+            headers: headers,
+            body: jsonEncode({'data': data}),
+          )
+          .timeout(const Duration(seconds: 25));
+      Object? decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {
+        throw const AppFailure('unavailable');
+      }
+      final body = stringMap(decoded);
+      if (response.statusCode != 200 || body.containsKey('error')) {
+        throw AppFailure.fromApi(body);
+      }
+      if (!body.containsKey('data')) throw const AppFailure('unknown');
+      return body['data'];
+    } catch (error) {
+      throw AppFailure.from(error);
+    }
   }
 
   @override
   Future<CheckoutQuote> quote(
     List<CartLine> lines,
     DeliveryAddress address,
-  ) async {
-    final result = await functions
-        .httpsCallable(
-          'quoteCheckout',
-          options: HttpsCallableOptions(timeout: const Duration(seconds: 25)),
-        )
-        .call({
-          'lines': lines.map((line) => line.toJson()).toList(),
-          'address': address.toJson(),
-          'channel': 'android',
-        });
-    return CheckoutQuote.fromJson(result.data);
-  }
-
+  ) async => CheckoutQuote.fromJson(
+    await _api('quoteCheckout', {
+      'lines': lines.map((line) => line.toJson()).toList(),
+      'address': address.toJson(),
+      'channel': 'android',
+    }),
+  );
   @override
   Future<String> placeCod(PendingCheckout checkout) async {
     _requireUid(checkout.uid);
-    final result = await functions
-        .httpsCallable(
-          'placeCodOrder',
-          options: HttpsCallableOptions(timeout: const Duration(seconds: 25)),
-        )
-        .call({
-          'quoteId': checkout.quote.quoteId,
-          'idempotencyKey': checkout.key,
-        });
-    final id = stringMap(result.data)['orderId'];
+    final id = stringMap(
+      await _api('placeCodOrder', {
+        'quoteId': checkout.quote.quoteId,
+        'idempotencyKey': checkout.key,
+      }),
+    )['orderId'];
     if (id is! String || id.isEmpty) throw const AppFailure('unknown');
     return id;
   }
@@ -354,58 +390,47 @@ class FirebaseCommerceBackend implements CommerceBackend {
   @override
   Future<OrderRecord> loadOrder(String uid, String orderId) async {
     _requireUid(uid);
-    final value = await db
-        .collection('orders')
-        .doc(orderId)
-        .get(const GetOptions(source: Source.server));
-    if (!value.exists || value.data()?['uid'] != uid) {
+    if (!RegExp(r'^[A-Za-z0-9_-]{8,128}$').hasMatch(orderId)) {
       throw const AppFailure('ORDER_NOT_FOUND');
     }
-    return OrderRecord.fromJson(value.data());
+    final value = await _read(db.ref('commerce/ordersByUser/$uid/$orderId'));
+    if (!value.exists || stringMap(value.value)['uid'] != uid) {
+      throw const AppFailure('ORDER_NOT_FOUND');
+    }
+    return OrderRecord.fromJson(value.value);
   }
 
   @override
-  Future<void> requestPhoneCode(
-    String phone, {
-    int? resendToken,
-    required void Function(String, int?) codeSent,
-    required void Function(AppFailure) failed,
-    required void Function() authenticated,
-    required void Function() timedOut,
-    required bool Function() acceptCredential,
+  Future<void> signInEmail(
+    String email,
+    String password, {
+    String? name,
+    bool createAccount = false,
+    String language = 'en',
   }) async {
-    await auth.verifyPhoneNumber(
-      phoneNumber: phone,
-      timeout: const Duration(seconds: 60),
-      forceResendingToken: resendToken,
-      verificationCompleted: (credential) async {
-        if (!acceptCredential()) return;
-        try {
-          await auth.signInWithCredential(credential);
-          authenticated();
-        } catch (error) {
-          failed(AppFailure.from(error));
-        }
-      },
-      verificationFailed: (error) => failed(AppFailure.from(error)),
-      codeSent: codeSent,
-      codeAutoRetrievalTimeout: (_) => timedOut(),
-    );
+    final normalized = email.trim().toLowerCase();
+    if (createAccount) {
+      final credential = await auth.createUserWithEmailAndPassword(
+        email: normalized,
+        password: password,
+      );
+      final user = credential.user!;
+      await user.updateDisplayName(name?.trim() ?? '');
+      await saveProfile(
+        CustomerIdentity(user.uid, user.email),
+        CustomerProfile(displayName: name?.trim() ?? '', language: language),
+      );
+    } else {
+      await auth.signInWithEmailAndPassword(
+        email: normalized,
+        password: password,
+      );
+    }
   }
 
   @override
-  Future<void> confirmPhoneCode(String verificationId, String code) async {
-    await auth.signInWithCredential(
-      PhoneAuthProvider.credential(
-        verificationId: verificationId,
-        smsCode: code,
-      ),
-    );
-  }
-
-  @override
-  Future<void> signInPreview(String phone) async =>
-      throw const AppFailure('operation-not-allowed');
+  Future<void> resetPassword(String email) =>
+      auth.sendPasswordResetEmail(email: email.trim().toLowerCase());
   @override
   Future<void> signOut() => auth.signOut();
 }

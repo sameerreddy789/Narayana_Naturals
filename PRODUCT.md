@@ -13,7 +13,7 @@ The product has a customer website, a Flutter Android customer app, and an owner
 ## Stack
 
 - **Confirmed by the user:** Next.js for the website, Flutter for the customer app, and Firebase for their shared backend.
-- **Implementation:** TypeScript for the Next.js application and Cloud Functions; Dart with FlutterFire for the app.
+- **Implementation:** TypeScript for the Next.js application and Node commerce API; Dart with FlutterFire for the app. Firebase Realtime Database and email/password Auth avoid the Firebase billing paths rejected by the owner.
 - Share Firebase identities, data, API contracts, business rules on the server, design tokens, and translated content. TypeScript and Dart interfaces are separate implementations; common UI source code is not assumed.
 - Registered Firebase project: `narayananaturals-6b5aa`; Android package: `com.narayananaturals.app`. Local integration uses the isolated `demo-narayana-naturals` emulator project. Web hosting, payment and shipping providers still require activation/configuration.
 
@@ -50,7 +50,7 @@ Do not invent extraction temperatures, organic certification, medical benefits, 
 Requirements carried forward from the brief:
 
 - Catalogue, product facts, pack selection, cart, quantity changes, and checkout.
-- Customer name, verified mobile number, delivery address, and PIN code.
+- Customer email account, name, delivery contact mobile number, address, and PIN code.
 - Online/UPI payment and COD where the business and delivery service support it.
 - Delivery eligibility, charges, order confirmation, tracking, and order history.
 - Shared accounts and orders across website and app.
@@ -62,13 +62,13 @@ Requirements carried forward from the brief:
 
 Proposed defaults for the first release:
 
-- Browse and build a cart without signing in; verify the phone during checkout. No separate registration form.
+- Browse and build a cart without signing in; use email/password at checkout. Create account and password reset are states of the same sign-in screen.
 - One product with three variants, rather than three disconnected product records.
 - Firebase Auth supplies the common customer UID. Orders and addresses belong to that UID.
 - A signed-in cart synchronizes across devices. A guest cart stays on its current device until it is merged on sign-in.
-- The implemented v1 Cloud Functions enforce quotes, packed stock, idempotent COD orders and order transitions. Online payment, refunds and reservation workers belong to a later merchant integration.
+- The implemented v1 Node API enforces quotes, packed stock, idempotent COD orders and order transitions using Realtime Database. Online payment, refunds and reservation workers belong to a later merchant integration.
 - A responsive owner dashboard manages both channels; a separate owner mobile app is outside the first release.
-- Firebase remembers onboarding progress. Website and app guidance account for their different navigation; guidance does not interrupt OTP entry or payment.
+- Firebase remembers onboarding progress. Website and app guidance account for their different navigation; guidance does not interrupt password entry or order confirmation.
 - Reorder copies previously purchased variants into a new cart and rechecks current price, stock, and delivery eligibility.
 
 ## Brand Commitments

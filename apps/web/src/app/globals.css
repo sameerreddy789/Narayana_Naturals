@@ -69,7 +69,6 @@ hr { border: 0; height: 1px; background: var(--border); margin: 22px 0; }
 .connection-banner { background: var(--pistachio); color: var(--leaf); border-bottom: 1px solid var(--border); }
 .connection-banner > div { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-block: 12px; }
 .connection-banner p { flex: 1; margin: 0; font-size: 15px; min-width: 180px; }
-.otp-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; }
 .recaptcha-container:empty { display: none; }
 .order-reference, .account-profile h2, .detail-block p { overflow-wrap: anywhere; }
 .summary-row strong, .price-stock > strong, .admin-stats strong, td { font-variant-numeric: tabular-nums; }

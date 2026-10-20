@@ -242,7 +242,7 @@ export function CheckoutPage() {
     } catch (reason) {
       if (!sameCheckout(requestUid, requestOperation)) return;
       setError(explainError(reason));
-      if (["QUOTE_EXPIRED", "QUOTE_CHANGED", "QUOTE_NOT_FOUND", "QUOTE_OWNER_MISMATCH", "IDEMPOTENCY_CONFLICT", "OUT_OF_STOCK", "STORE_NOT_READY", "COD_UNAVAILABLE", "NOT_SERVICEABLE", "INVALID_INPUT"].includes(errorCode(reason))) {
+      if (["QUOTE_EXPIRED", "QUOTE_CHANGED", "QUOTE_NOT_FOUND", "QUOTE_OWNER_MISMATCH", "IDEMPOTENCY_CONFLICT", "OUT_OF_STOCK", "STORE_NOT_READY", "STORE_CAPACITY", "COD_UNAVAILABLE", "NOT_SERVICEABLE", "INVALID_INPUT"].includes(errorCode(reason))) {
         updateReview(null);
         try { if (mode !== "demo") removeCheckoutReview(requestUid, () => sessionStorage); } catch { /* The server explicitly rejected this attempt; a new review can replace it. */ }
       }
@@ -256,7 +256,7 @@ export function CheckoutPage() {
       : !checkoutHasContent(state.cart.length, activeReview) ? <EmptyState title={t("Choose your oil first", "ముందుగా నూనె ఎంచుకోండి")} description={t("Add a pack to your cart to begin checkout.", "చెక్అవుట్ కోసం కార్ట్‌లో ప్యాక్ చేర్చండి.")} />
       : <>{catalogueError && <DataStatus error={catalogueError} />}<form className="checkout-layout" onSubmit={requestReview}>
         <div className="checkout-main"><section className="form-section"><div className="form-section-heading"><h2>{t("Delivery details", "డెలివరీ వివరాలు")}</h2>
-          {mode !== "firebase" && <button type="button" disabled={busy || activeReview?.attempted} className="text-button" onClick={() => changeAddress({ name: state.user!.name || "Preview Customer", phone: state.user!.phone, street: "12, Sample Street", city: "Chittoor", pin: "517001" })}>{t("Use sample address", "నమూనా చిరునామా వాడండి")}</button>}
+          {mode !== "firebase" && <button type="button" disabled={busy || activeReview?.attempted} className="text-button" onClick={() => changeAddress({ name: state.user!.name || "Preview Customer", phone: "6000000001", street: "12, Sample Street", city: "Chittoor", pin: "517001" })}>{t("Use sample address", "నమూనా చిరునామా వాడండి")}</button>}
         </div><fieldset disabled={busy || activeReview?.attempted}><AddressFields address={address} onChange={changeAddress} /></fieldset>
           <p className="small-note">{mode === "firebase" ? t("Your order keeps a copy of these delivery details.", "మీ ఆర్డర్‌లో ఈ డెలివరీ వివరాలు సేవ్ అవుతాయి.") : t("Use sample details for preview testing. No delivery is booked.", "ప్రివ్యూ కోసం నమూనా వివరాలు వాడండి. డెలివరీ బుక్ చేయబడదు.")}</p>
         </section><section className="form-section"><h2>{t("Delivery", "డెలివరీ")}</h2>{quote ? <div className="delivery-result"><Truck size={23} /><div><strong>{t("Delivery reviewed for", "ఈ పిన్‌కు డెలివరీ చూశారు")} {address.pin}</strong><p>{quote.estimate} · {money(quote.shippingPaise)} {quote.preview ? t("sample charge", "నమూనా ఛార్జీ") : t("delivery charge", "డెలివరీ ఛార్జీ")}</p></div><Check size={20} /></div>
@@ -292,5 +292,5 @@ export function CheckoutPage() {
 
 function UserNotice() {
   const { mode, t } = usePreview();
-  return <><h2>{t("Keep your orders in one place", "మీ ఆర్డర్లను ఒకే చోట ఉంచండి")}</h2><p>{mode === "demo" ? t("Try a demo account to see order history and the welcome guide. No OTP is sent in this preview.", "ఆర్డర్ చరిత్ర మరియు స్వాగత గైడ్ కోసం డెమో ఖాతా ప్రయత్నించండి. ఈ ప్రివ్యూలో OTP పంపబడదు.") : t("Verify your mobile number to save your address, follow your orders and continue checkout.", "చిరునామా సేవ్ చేయడానికి, ఆర్డర్లు ట్రాక్ చేయడానికి మరియు చెక్అవుట్ కోసం మొబైల్ నంబర్ ధృవీకరించండి.")}</p></>;
+  return <><h2>{t("Keep your orders in one place", "మీ ఆర్డర్లను ఒకే చోట ఉంచండి")}</h2><p>{mode === "demo" ? t("Try a demo email account to see order history and the welcome guide.", "ఆర్డర్ చరిత్ర మరియు స్వాగత గైడ్ కోసం డెమో ఈమెయిల్ ఖాతా ప్రయత్నించండి.") : t("Sign in with your email to save your address, follow your orders and continue checkout.", "చిరునామా సేవ్ చేయడానికి, ఆర్డర్లు ట్రాక్ చేయడానికి మరియు చెక్అవుట్ కోసం మీ ఈమెయిల్‌తో సైన్ ఇన్ చేయండి.")}</p></>;
 }

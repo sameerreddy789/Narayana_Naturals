@@ -1,5 +1,4 @@
 import '../config.dart';
-import '../domain/failure.dart';
 import '../domain/models.dart';
 
 abstract class CommerceBackend {
@@ -25,16 +24,13 @@ abstract class CommerceBackend {
   Future<CheckoutQuote> quote(List<CartLine> lines, DeliveryAddress address);
   Future<String> placeCod(PendingCheckout checkout);
   Future<OrderRecord> loadOrder(String uid, String orderId);
-  Future<void> requestPhoneCode(
-    String phone, {
-    int? resendToken,
-    required void Function(String verificationId, int? resendToken) codeSent,
-    required void Function(AppFailure error) failed,
-    required void Function() authenticated,
-    required void Function() timedOut,
-    required bool Function() acceptCredential,
+  Future<void> signInEmail(
+    String email,
+    String password, {
+    String? name,
+    bool createAccount = false,
+    String language = 'en',
   });
-  Future<void> confirmPhoneCode(String verificationId, String code);
-  Future<void> signInPreview(String phone);
+  Future<void> resetPassword(String email);
   Future<void> signOut();
 }

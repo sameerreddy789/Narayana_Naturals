@@ -32,33 +32,34 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
-  final phone = TextEditingController();
-  final code = TextEditingController();
-  final phoneForm = GlobalKey<FormState>(), codeForm = GlobalKey<FormState>();
+  final email = TextEditingController();
+  final password = TextEditingController();
+  final name = TextEditingController();
+  final form = GlobalKey<FormState>();
   AppController? controller;
-  String? verificationId;
-  int? resendToken;
-  DateTime? resendAt;
-  Timer? ticker;
   AppFailure? error;
-  bool busy = false, autoTimedOut = false, completing = false;
-  int request = 0;
-  String? requestedPhone;
+  bool busy = false, createAccount = false, reset = false, showPassword = false;
+  bool completing = false, loginFinished = false, resetSent = false;
+  String? requestedEmail;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (controller == null) {
       controller = context.app;
       controller!.addListener(authChanged);
-      if (controller!.preview) phone.text = '6000000001';
+      if (controller!.backend.mode == BackendMode.demo) {
+        email.text = 'customer@narayana.test';
+        password.text = 'NarayanaDemo123!';
+      }
     }
   }
 
   void authChanged() {
     if (!mounted ||
         completing ||
+        !loginFinished ||
         controller?.accountReady != true ||
-        controller?.user?.phone != requestedPhone) {
+        controller?.user?.email != requestedEmail) {
       return;
     }
     completing = true;
@@ -67,111 +68,70 @@ class _SignInPageState extends State<SignInPage> {
     });
   }
 
-  int get resendSeconds => resendAt == null
-      ? 0
-      : resendAt!.difference(DateTime.now()).inSeconds.clamp(0, 60);
-  Future<void> sendCode({bool resend = false}) async {
-    if (!phoneForm.currentState!.validate()) return;
-    final app = controller!;
-    final currentRequest = ++request;
-    requestedPhone = '+91${phone.text.trim()}';
+  Future<void> submit() async {
+    if (busy || !form.currentState!.validate()) return;
+    requestedEmail = email.text.trim().toLowerCase();
     setState(() {
       busy = true;
       error = null;
-      autoTimedOut = false;
+      resetSent = false;
     });
-    if (app.backend.mode == BackendMode.demo) {
-      try {
-        await app.backend.signInPreview(requestedPhone!);
-      } catch (failure) {
-        if (mounted) setState(() => error = AppFailure.from(failure));
-      }
-      if (mounted) setState(() => busy = false);
-      authChanged();
-      return;
-    }
-    bool active() => mounted && request == currentRequest;
     try {
-      await app.backend.requestPhoneCode(
-        requestedPhone!,
-        resendToken: resend ? resendToken : null,
-        acceptCredential: active,
-        codeSent: (id, token) {
-          if (!active()) return;
-          setState(() {
-            verificationId = id;
-            resendToken = token;
-            busy = false;
-            resendAt = DateTime.now().add(const Duration(seconds: 60));
-          });
-          ticker?.cancel();
-          ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-            if (!mounted) return;
-            setState(() {});
-            if (resendSeconds == 0) ticker?.cancel();
-          });
-        },
-        failed: (failure) {
-          if (active()) {
-            setState(() {
-              error = failure;
-              busy = false;
-            });
-          }
-        },
-        authenticated: () {
-          if (active()) {
-            setState(() => busy = false);
-            authChanged();
-          }
-        },
-        timedOut: () {
-          if (active()) {
-            setState(() {
-              busy = false;
-              autoTimedOut = true;
-            });
-          }
-        },
-      );
-    } catch (failure) {
-      if (active()) {
-        setState(() {
-          error = AppFailure.from(failure);
-          busy = false;
-        });
+      final app = controller!;
+      if (reset) {
+        await app.backend.resetPassword(requestedEmail!);
+        if (mounted) setState(() => resetSent = true);
+      } else {
+        await app.backend.signInEmail(
+          requestedEmail!,
+          password.text,
+          name: createAccount ? name.text.trim() : null,
+          createAccount: createAccount,
+          language: app.language,
+        );
+        loginFinished = true;
+        TextInput.finishAutofillContext(shouldSave: true);
+        authChanged();
       }
+    } catch (failure) {
+      if (mounted) setState(() => error = AppFailure.from(failure));
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
-  Future<void> verifyCode() async {
-    if (!codeForm.currentState!.validate() || verificationId == null) return;
-    final currentRequest = request;
+  void selectMode({bool creating = false, bool resetting = false}) {
     setState(() {
-      busy = true;
+      createAccount = creating;
+      reset = resetting;
       error = null;
+      resetSent = false;
+      loginFinished = false;
     });
-    try {
-      await controller!.backend.confirmPhoneCode(
-        verificationId!,
-        code.text.trim(),
-      );
-      authChanged();
-    } catch (failure) {
-      if (mounted && currentRequest == request) {
-        setState(() => error = AppFailure.from(failure));
-      }
-    } finally {
-      if (mounted && currentRequest == request) setState(() => busy = false);
-    }
+    form.currentState?.reset();
   }
 
   @override
   Widget build(BuildContext context) {
     final app = context.app;
-    final preview = app.backend.mode == BackendMode.demo;
+    final demo = app.backend.mode == BackendMode.demo;
     return Scaffold(
-      appBar: AppBar(title: Text(context.tr('Phone sign-in', 'ఫోన్ సైన్ ఇన్'))),
+      appBar: AppBar(
+        title: Text(
+          context.tr(
+            reset
+                ? 'Reset password'
+                : createAccount
+                ? 'Create account'
+                : 'Sign in',
+            reset
+                ? 'పాస్‌వర్డ్ మార్చండి'
+                : createAccount
+                ? 'ఖాతా సృష్టించండి'
+                : 'సైన్ ఇన్',
+          ),
+        ),
+      ),
       body: SafeArea(
         child: PageBody(
           maxWidth: 560,
@@ -180,139 +140,218 @@ class _SignInPageState extends State<SignInPage> {
             const SizedBox(height: 24),
             PageTitle(
               context.tr(
-                'One phone. Your cart and orders.',
-                'ఒక ఫోన్. మీ కార్ట్, ఆర్డర్‌లు.',
+                reset
+                    ? 'Get back to your account'
+                    : 'Your email. Your cart and orders.',
+                reset
+                    ? 'మీ ఖాతాలోకి తిరిగి రండి'
+                    : 'మీ ఈమెయిల్. మీ కార్ట్, ఆర్డర్‌లు.',
               ),
-              description: preview
-                  ? context.tr(
-                      'Use a preview phone account. No SMS is sent and nothing leaves this device.',
-                      'ప్రివ్యూ ఫోన్ ఖాతాను ఉపయోగించండి. ఎస్‌ఎమ్‌ఎస్ పంపబడదు; ఈ పరికరం నుంచి సమాచారం బయటకు వెళ్లదు.',
-                    )
-                  : context.tr(
-                      'Sign in with the same number you use on the website.',
-                      'వెబ్‌సైట్‌లో ఉపయోగించే అదే నంబర్‌తో సైన్ ఇన్ చేయండి.',
-                    ),
+              description: context.tr(
+                reset
+                    ? 'We’ll email you a link to choose a new password.'
+                    : demo
+                    ? 'Try a sample account on this device. Preview orders do not leave this device.'
+                    : 'Use the same email on the website and app to keep your cart and orders together.',
+                reset
+                    ? 'కొత్త పాస్‌వర్డ్ ఎంచుకోవడానికి మీకు ఈమెయిల్ లింక్ పంపుతాము.'
+                    : demo
+                    ? 'ఈ పరికరంలో నమూనా ఖాతాను ప్రయత్నించండి. ప్రివ్యూ ఆర్డర్‌లు ఈ పరికరం నుంచి బయటకు వెళ్లవు.'
+                    : 'వెబ్‌సైట్, యాప్‌లో అదే ఈమెయిల్‌తో మీ కార్ట్, ఆర్డర్‌లను ఒకే చోట ఉంచండి.',
+              ),
             ),
             const LanguageChoice(),
             const SizedBox(height: 24),
-            Form(
-              key: phoneForm,
-              child: TextFormField(
-                key: const ValueKey('sign_in_phone'),
-                controller: phone,
-                enabled: verificationId == null && !busy,
-                keyboardType: TextInputType.phone,
-                autofillHints: const [AutofillHints.telephoneNumberNational],
-                maxLength: 10,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                textInputAction: TextInputAction.done,
-                decoration: InputDecoration(
-                  labelText: context.tr('Mobile number', 'మొబైల్ నంబర్'),
-                  prefixText: '+91 ',
-                  counterText: '',
-                ),
-                validator: (value) =>
-                    RegExp(r'^[6-9][0-9]{9}$').hasMatch(value?.trim() ?? '')
-                    ? null
-                    : context.tr(
-                        'Enter 10 digits starting with 6, 7, 8 or 9.',
-                        '6, 7, 8 లేదా 9 తో ప్రారంభమయ్యే 10 అంకెలు నమోదు చేయండి.',
-                      ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (!preview && verificationId == null)
-              Text(
-                context.tr(
-                  'Continue sends a verification SMS. Google processes your phone number to verify your account and prevent abuse.',
-                  'కొనసాగిస్తే ధృవీకరణ ఎస్‌ఎమ్‌ఎస్ వస్తుంది. ఖాతా ధృవీకరణ, దుర్వినియోగ నివారణ కోసం గూగుల్ మీ ఫోన్ నంబర్‌ను ప్రాసెస్ చేస్తుంది.',
-                ),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            if (app.backend.mode == BackendMode.emulator)
-              Text(
-                context.tr(
-                  'No real SMS. Read the verification code from the local Auth emulator.',
-                  'నిజమైన ఎస్‌ఎమ్‌ఎస్ లేదు. స్థానిక ఆత్ ఎమ్యులేటర్‌లో ధృవీకరణ కోడ్‌ను చూడండి.',
-                ),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            if (verificationId != null) ...[
-              Text(
-                context.tr(
-                  'Enter the six-digit code sent to +91 ${phone.text}.',
-                  '+91 ${phone.text} కు పంపిన ఆరు అంకెల కోడ్ నమోదు చేయండి.',
-                ),
-              ),
-              const SizedBox(height: 20),
-              Form(
-                key: codeForm,
-                child: TextFormField(
-                  key: const ValueKey('sign_in_code'),
-                  controller: code,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  autofillHints: const [AutofillHints.oneTimeCode],
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => unawaited(verifyCode()),
-                  decoration: InputDecoration(
-                    labelText: context.tr('Verification code', 'ధృవీకరణ కోడ్'),
-                    counterText: '',
-                  ),
-                  validator: (value) =>
-                      RegExp(r'^[0-9]{6}$').hasMatch(value ?? '')
-                      ? null
-                      : context.tr(
-                          'Enter all six digits.',
-                          'ఆరు అంకెలు నమోదు చేయండి.',
-                        ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (autoTimedOut)
-                Text(
-                  context.tr(
-                    'Automatic verification timed out. You can enter the SMS code above.',
-                    'ఆటోమేటిక్ ధృవీకరణ గడువు ముగిసింది. పైన ఎస్‌ఎమ్‌ఎస్ కోడ్ నమోదు చేయవచ్చు.',
-                  ),
-                ),
+            if (!reset)
               Wrap(
                 spacing: 12,
                 runSpacing: 8,
                 children: [
-                  TextButton(
-                    onPressed: !busy && resendSeconds == 0
-                        ? () => unawaited(sendCode(resend: true))
-                        : null,
-                    child: Text(
-                      resendSeconds == 0
-                          ? context.tr('Resend code', 'కోడ్ మళ్లీ పంపండి')
-                          : context.tr(
-                              'Resend in ${resendSeconds}s',
-                              '$resendSeconds సెకన్లలో మళ్లీ పంపండి',
-                            ),
-                    ),
+                  ChoiceChip(
+                    key: const ValueKey('auth_sign_in'),
+                    label: Text(context.tr('Sign in', 'సైన్ ఇన్')),
+                    selected: !createAccount,
+                    onSelected: busy ? null : (_) => selectMode(),
                   ),
-                  TextButton(
-                    onPressed: busy
-                        ? null
-                        : () => setState(() {
-                            request++;
-                            verificationId = null;
-                            resendToken = null;
-                            code.clear();
-                            ticker?.cancel();
-                            error = null;
-                          }),
-                    child: Text(context.tr('Change phone', 'ఫోన్ మార్చండి')),
+                  ChoiceChip(
+                    key: const ValueKey('auth_create'),
+                    label: Text(
+                      context.tr('Create account', 'ఖాతా సృష్టించండి'),
+                    ),
+                    selected: createAccount,
+                    onSelected: busy ? null : (_) => selectMode(creating: true),
                   ),
                 ],
               ),
-            ],
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
+            AutofillGroup(
+              child: Form(
+                key: form,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (createAccount && !reset) ...[
+                      TextFormField(
+                        key: const ValueKey('sign_in_name'),
+                        controller: name,
+                        enabled: !busy,
+                        autofillHints: const [AutofillHints.name],
+                        textInputAction: TextInputAction.next,
+                        maxLength: 100,
+                        decoration: InputDecoration(
+                          labelText: context.tr('Your name', 'మీ పేరు'),
+                          counterText: '',
+                        ),
+                        validator: (value) => (value?.trim().length ?? 0) >= 2
+                            ? null
+                            : context.tr(
+                                'Enter your name.',
+                                'మీ పేరు నమోదు చేయండి.',
+                              ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                    TextFormField(
+                      key: const ValueKey('sign_in_email'),
+                      controller: email,
+                      enabled: !busy,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [
+                        AutofillHints.username,
+                        AutofillHints.email,
+                      ],
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      maxLength: 254,
+                      textInputAction: reset
+                          ? TextInputAction.done
+                          : TextInputAction.next,
+                      onFieldSubmitted: reset
+                          ? (_) => unawaited(submit())
+                          : null,
+                      decoration: InputDecoration(
+                        labelText: context.tr(
+                          'Email address',
+                          'ఈమెయిల్ చిరునామా',
+                        ),
+                        counterText: '',
+                      ),
+                      validator: (value) =>
+                          RegExp(
+                            r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                          ).hasMatch(value?.trim() ?? '')
+                          ? null
+                          : context.tr(
+                              'Enter a valid email address.',
+                              'చెల్లుబాటు అయ్యే ఈమెయిల్ చిరునామా నమోదు చేయండి.',
+                            ),
+                    ),
+                    if (!reset) ...[
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        key: const ValueKey('sign_in_password'),
+                        controller: password,
+                        enabled: !busy,
+                        obscureText: !showPassword,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        autofillHints: [
+                          createAccount
+                              ? AutofillHints.newPassword
+                              : AutofillHints.password,
+                        ],
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => unawaited(submit()),
+                        maxLength: 128,
+                        decoration: InputDecoration(
+                          labelText: context.tr('Password', 'పాస్‌వర్డ్'),
+                          helperText: createAccount
+                              ? context.tr(
+                                  'At least 8 characters',
+                                  'కనీసం 8 అక్షరాలు',
+                                )
+                              : null,
+                          counterText: '',
+                          suffixIcon: IconButton(
+                            tooltip: context.tr(
+                              showPassword ? 'Hide password' : 'Show password',
+                              showPassword
+                                  ? 'పాస్‌వర్డ్ దాచండి'
+                                  : 'పాస్‌వర్డ్ చూపండి',
+                            ),
+                            onPressed: () =>
+                                setState(() => showPassword = !showPassword),
+                            icon: Icon(
+                              showPassword
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
+                            ),
+                          ),
+                        ),
+                        validator: (value) => value == null || value.isEmpty
+                            ? context.tr(
+                                'Enter your password.',
+                                'మీ పాస్‌వర్డ్ నమోదు చేయండి.',
+                              )
+                            : createAccount && value.length < 8
+                            ? context.tr(
+                                'Use at least 8 characters.',
+                                'కనీసం 8 అక్షరాలు ఉపయోగించండి.',
+                              )
+                            : null,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (app.preview && !reset)
+              TextButton(
+                onPressed: busy
+                    ? null
+                    : () => setState(() {
+                        email.text = 'customer@narayana.test';
+                        password.text = 'NarayanaDemo123!';
+                      }),
+                child: Text(
+                  context.tr(
+                    'Fill sample credentials',
+                    'నమూనా వివరాలు నింపండి',
+                  ),
+                ),
+              ),
+            if (!reset && !createAccount)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  key: const ValueKey('auth_forgot'),
+                  onPressed: busy ? null : () => selectMode(resetting: true),
+                  child: Text(
+                    context.tr('Forgot password?', 'పాస్‌వర్డ్ మర్చిపోయారా?'),
+                  ),
+                ),
+              ),
+            if (resetSent)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  context.tr(
+                    demo
+                        ? 'Preview only: no email was sent. Return to sign in to try your account.'
+                        : app.backend.mode == BackendMode.emulator
+                        ? 'Reset link created in the local Auth emulator. No real email was sent.'
+                        : 'If this email has an account, a reset link is on its way. Check your inbox and spam folder.',
+                    demo
+                        ? 'ప్రివ్యూ మాత్రమే: ఈమెయిల్ పంపబడలేదు. ఖాతా ప్రయత్నించడానికి సైన్ ఇన్‌కు తిరిగి రండి.'
+                        : app.backend.mode == BackendMode.emulator
+                        ? 'స్థానిక ఆత్ ఎమ్యులేటర్‌లో రీసెట్ లింక్ సృష్టించబడింది. నిజమైన ఈమెయిల్ పంపబడలేదు.'
+                        : 'ఈ ఈమెయిల్‌తో ఖాతా ఉంటే రీసెట్ లింక్ వస్తుంది. ఇన్‌బాక్స్, స్పామ్ చూడండి.',
+                  ),
+                ),
+              ),
             if (error != null) FailurePanel(error: error!),
-            if (app.accountError != null)
+            if (app.accountError != null && !reset)
               FailurePanel(
                 error: app.accountError!,
                 title: context.tr(
@@ -321,7 +360,7 @@ class _SignInPageState extends State<SignInPage> {
                 ),
                 onRetry: () => unawaited(app.retryAccount()),
               ),
-            if (app.accountLoading)
+            if (app.accountLoading && !reset)
               LoadingState(
                 label: context.tr(
                   'Loading your saved cart and orders…',
@@ -330,14 +369,39 @@ class _SignInPageState extends State<SignInPage> {
               ),
             BusyButton(
               key: const ValueKey('sign_in_continue'),
-              label: preview
-                  ? context.tr('Continue in preview', 'ప్రివ్యూలో కొనసాగించండి')
-                  : verificationId == null
-                  ? context.tr('Send verification code', 'ధృవీకరణ కోడ్ పంపండి')
-                  : context.tr('Verify & continue', 'ధృవీకరించి కొనసాగించండి'),
-              busy: busy || app.accountLoading,
-              onPressed: () =>
-                  unawaited(verificationId == null ? sendCode() : verifyCode()),
+              busy: busy || (!reset && app.accountLoading),
+              label: context.tr(
+                reset
+                    ? 'Send reset link'
+                    : createAccount
+                    ? 'Create account & continue'
+                    : demo
+                    ? 'Continue in preview'
+                    : 'Sign in & continue',
+                reset
+                    ? 'రీసెట్ లింక్ పంపండి'
+                    : createAccount
+                    ? 'ఖాతా సృష్టించి కొనసాగించండి'
+                    : demo
+                    ? 'ప్రివ్యూలో కొనసాగించండి'
+                    : 'సైన్ ఇన్ చేసి కొనసాగించండి',
+              ),
+              onPressed: () => unawaited(submit()),
+            ),
+            if (reset)
+              TextButton(
+                onPressed: busy ? null : () => selectMode(),
+                child: Text(
+                  context.tr('Back to sign in', 'సైన్ ఇన్‌కు తిరిగి రండి'),
+                ),
+              ),
+            const SizedBox(height: 20),
+            Text(
+              context.tr(
+                'Your email signs you in. We ask for a mobile number with your delivery address.',
+                'మీ ఈమెయిల్‌తో సైన్ ఇన్ అవ్వండి. డెలివరీ చిరునామాతో మొబైల్ నంబర్ అడుగుతాము.',
+              ),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
@@ -347,11 +411,10 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   void dispose() {
-    request++;
-    ticker?.cancel();
     controller?.removeListener(authChanged);
-    phone.dispose();
-    code.dispose();
+    email.dispose();
+    password.dispose();
+    name.dispose();
     super.dispose();
   }
 }
@@ -395,8 +458,8 @@ class _WelcomePageState extends State<WelcomePage> {
               'నారాయణ నేచురల్స్‌కు స్వాగతం',
             ),
             description: context.tr(
-              'Your phone account keeps your cart, address and orders together across the website and app.',
-              'మీ ఫోన్ ఖాతా వెబ్‌సైట్, యాప్‌లో కార్ట్, చిరునామా, ఆర్డర్‌లను ఒకే చోట ఉంచుతుంది.',
+              'Your email account keeps your cart, address and orders together across the website and app.',
+              'మీ ఈమెయిల్ ఖాతా వెబ్‌సైట్, యాప్‌లో కార్ట్, చిరునామా, ఆర్డర్‌లను ఒకే చోట ఉంచుతుంది.',
             ),
           ),
           const LanguageChoice(),
@@ -481,8 +544,7 @@ class _AddressPageState extends State<AddressPage> {
       owner = app.user?.uid;
       final address = app.address;
       name.text = address?.name ?? app.profile.displayName;
-      phone.text =
-          address?.phone ?? (app.user?.phone?.replaceFirst('+91', '') ?? '');
+      phone.text = address?.phone ?? '';
       street.text = address?.street ?? '';
       city.text = address?.city ?? '';
       pin.text = address?.pin ?? '';
@@ -701,6 +763,7 @@ class _AddressPageState extends State<AddressPage> {
                         key: const ValueKey('preview_address'),
                         onPressed: () => setState(() {
                           name.text = 'Preview Customer';
+                          phone.text = '6000000001';
                           street.text = '10 Sample Street';
                           city.text = 'Chittoor';
                           pin.text = '517001';

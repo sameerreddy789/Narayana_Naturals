@@ -77,7 +77,7 @@ export function parseSettings(data: unknown): StorefrontSettings | null {
 }
 export function parseOnboarding(data: unknown): Onboarding {
   if (data === undefined || data === null) return { ...EMPTY_ONBOARDING, dismissedPages: [] };
-  if (object(data) && data.dismissedPages === undefined) data = { ...data, dismissedPages: [] };
+  if (object(data) && (data.dismissedPages === undefined || data.dismissedPages === null)) data = { ...data, dismissedPages: [] };
   if (!object(data) || typeof data.welcomeSeen !== "boolean" || typeof data.skipped !== "boolean" || !Array.isArray(data.dismissedPages) || !data.dismissedPages.every(page => typeof page === "string")) throw new StoreError("INVALID_DATA");
   return { welcomeSeen: data.welcomeSeen, skipped: data.skipped, dismissedPages: data.dismissedPages };
 }
@@ -145,7 +145,8 @@ export function errorMessage(error: unknown, t: (en: string, te: string) => stri
     API_NOT_CONFIGURED: ["The order service is not connected yet. Please contact the business.", "ఆర్డర్ సేవ ఇంకా కనెక్ట్ కాలేదు. వ్యాపారాన్ని సంప్రదించండి."],
     APP_CHECK_REQUIRED: ["The security check could not complete. Try again or contact the business.", "భద్రతా తనిఖీ పూర్తి కాలేదు. మళ్లీ ప్రయత్నించండి లేదా వ్యాపారాన్ని సంప్రదించండి."],
     EMAIL_REQUIRED: ["Sign in using your email account before continuing.", "కొనసాగించే ముందు మీ ఇమెయిల్ ఖాతాతో సైన్ ఇన్ చేయండి."],
-    CAPACITY_REACHED: ["Ordering is temporarily paused. Please contact the business.", "ఆర్డర్లు తాత్కాలికంగా నిలిపివేయబడ్డాయి. వ్యాపారాన్ని సంప్రదించండి."],
+    STORE_CAPACITY: ["Ordering is temporarily paused. Your existing orders are saved. Please contact the business.", "ఆర్డర్లు తాత్కాలికంగా నిలిపివేయబడ్డాయి. మీ పాత ఆర్డర్లు భద్రంగా ఉన్నాయి. వ్యాపారాన్ని సంప్రదించండి."],
+    UNAVAILABLE: ["The order service could not complete this request. Retry the same order to check its result.", "ఆర్డర్ సేవ ఈ అభ్యర్థన పూర్తి చేయలేకపోయింది. ఫలితం కోసం అదే ఆర్డర్‌ను మళ్లీ ప్రయత్నించండి."],
     "network-request-failed": ["The connection failed. Check your internet connection and try again.", "కనెక్షన్ విఫలమైంది. ఇంటర్నెట్‌ను సరిచూసి మళ్లీ ప్రయత్నించండి."],
     unavailable: ["The store could not be reached. Check your connection and try again.", "స్టోర్‌కు కనెక్ట్ కాలేదు. కనెక్షన్‌ను సరిచూసి మళ్లీ ప్రయత్నించండి."],
     "deadline-exceeded": ["The request took too long. Try again; an order retry keeps the same checkout reference.", "అభ్యర్థన ఎక్కువ సమయం తీసుకుంది. మళ్లీ ప్రయత్నించండి; ఆర్డర్‌కు అదే చెక్అవుట్ ఉపయోగించబడుతుంది."],

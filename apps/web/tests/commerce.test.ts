@@ -114,10 +114,10 @@ test("store settings cannot advertise an unimplemented online payment path", () 
   assert.throws(() => parseSettings({ orderingEnabled: true, onlinePaymentsEnabled: true, preview: false }), isInvalid);
 });
 
-test("callable machine errors take priority and preserve useful permission and Telugu messages", () => {
-  assert.equal(errorCode({ code: "functions/failed-precondition", details: { code: "QUOTE_CHANGED" } }), "QUOTE_CHANGED");
-  assert.match(errorMessage({ code: "functions/permission-denied" }, en => en), /cannot access/);
-  assert.match(errorMessage({ details: { code: "QUOTE_CHANGED" } }, (_en, te) => te), /ధరలు/);
+test("REST machine errors take priority and preserve useful permission and Telugu messages", () => {
+  assert.equal(errorCode({ code: "failed-precondition", details: { code: "QUOTE_CHANGED" } }), "QUOTE_CHANGED");
+  assert.match(errorMessage({ code: "database/permission-denied" }, en => en), /cannot access/);
+  assert.match(errorMessage({ code: "QUOTE_CHANGED" }, (_en, te) => te), /ధరలు/);
 });
 
 test("legacy demo records migrate to demo UIDs without granting owner access", () => {

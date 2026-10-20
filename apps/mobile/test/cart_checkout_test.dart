@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:narayana_naturals/config.dart';
 import 'package:narayana_naturals/domain/failure.dart';
@@ -53,15 +52,11 @@ void main() {
     expect(money(1050), '₹10.50');
   });
   test(
-    'callable details code drives localized recovery, never payment success',
+    'REST API machine code drives localized recovery, never payment success',
     () {
-      final failure = AppFailure.from(
-        FirebaseFunctionsException(
-          code: 'failed-precondition',
-          message: 'Server rejected order',
-          details: {'code': 'QUOTE_CHANGED'},
-        ),
-      );
+      final failure = AppFailure.fromApi({
+        'error': {'code': 'QUOTE_CHANGED', 'message': 'Server rejected order'},
+      });
       expect(failure.code, 'QUOTE_CHANGED');
       expect(failure.definitiveCheckoutRejection, isTrue);
       expect(failure.message('te'), contains('కొత్త'));
@@ -81,7 +76,7 @@ void main() {
       addTearDown(f.controller.dispose);
       await f.controller.setQuantity('1l', 2);
       f.backend.hydrationGate = Completer<void>();
-      await f.backend.signInPreview(customerPhone);
+      await f.backend.signInEmail(customerEmail, previewPassword);
       await until(() => f.controller.accountLoading);
       expect(f.controller.cart, isEmpty);
       await expectLater(
@@ -117,21 +112,21 @@ void main() {
       expect(f.controller.cart, isEmpty);
       expect(f.controller.address, isNull);
       expect(f.controller.pending, isNull);
-      await f.backend.signInPreview(otherPhone);
+      await f.backend.signInEmail(otherEmail, previewPassword);
       await until(
         () =>
-            f.controller.accountReady && f.controller.user?.phone == otherPhone,
+            f.controller.accountReady && f.controller.user?.email == otherEmail,
       );
       expect(f.controller.cart, isEmpty);
       expect(f.controller.address, isNull);
       expect(f.controller.orders, isEmpty);
       expect(f.controller.guide.welcomeSeen, isFalse);
       expect(f.controller.pending, isNull);
-      await f.backend.signInPreview(customerPhone);
+      await f.backend.signInEmail(customerEmail, previewPassword);
       await until(
         () =>
             f.controller.accountReady &&
-            f.controller.user?.phone == customerPhone,
+            f.controller.user?.email == customerEmail,
       );
       expect(f.controller.cart, const [CartLine('2l', 3)]);
       expect(f.controller.address?.name, delivery.name);
@@ -271,11 +266,11 @@ void main() {
     addTearDown(restarted.controller.dispose);
     await until(() => !restarted.controller.cartDirty);
     expect(restarted.controller.cart, const [CartLine('2l', 2)]);
-    await restarted.backend.signInPreview(otherPhone);
+    await restarted.backend.signInEmail(otherEmail, previewPassword);
     await until(
       () =>
           restarted.controller.accountReady &&
-          restarted.controller.user?.phone == otherPhone,
+          restarted.controller.user?.email == otherEmail,
     );
     expect(restarted.controller.cart, isEmpty);
   });

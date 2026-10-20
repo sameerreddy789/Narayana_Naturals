@@ -1,0 +1,83 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "commerce": {
+      "products": {
+        "groundnut-oil": { ".read": "data.child('published').val() === true" }
+      },
+      "variants": { ".read": true },
+      "publicContent": { "storefront": { ".read": true } },
+      "deliveryRules": { "$pin": { ".read": true } },
+      "ordersByUser": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || auth.token.admin === true)",
+          ".indexOn": ["createdAt"]
+        }
+      },
+      "orderIndex": {
+        ".read": "auth != null && auth.token.admin === true",
+        ".indexOn": ["createdAt"]
+      }
+    },
+    "users": {
+      "$uid": {
+        "profile": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid && newData.exists()",
+          ".validate": "newData.hasChildren(['displayName', 'email', 'language'])",
+          "displayName": { ".validate": "newData.isString() && newData.val().length <= 100" },
+          "email": { ".validate": "newData.isString() && newData.val() === auth.token.email && newData.val().length <= 254" },
+          "language": { ".validate": "newData.val() === 'en' || newData.val() === 'te'" },
+          "phoneNumber": { ".validate": "newData.isString() && newData.val().matches(/^\\+91[6-9][0-9]{9}$/)" },
+          "$other": { ".validate": false }
+        },
+        "addresses": {
+          "default": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.hasChildren(['name', 'phone', 'street', 'city', 'pin'])",
+            "name": { ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 100" },
+            "phone": { ".validate": "newData.isString() && newData.val().matches(/^[6-9][0-9]{9}$/)" },
+            "street": { ".validate": "newData.isString() && newData.val().length >= 5 && newData.val().length <= 300" },
+            "city": { ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 100" },
+            "pin": { ".validate": "newData.isString() && newData.val().matches(/^[1-9][0-9]{5}$/)" },
+            "$other": { ".validate": false }
+          }
+        },
+        "onboarding": {
+          "$version": {
+            ".read": "auth != null && auth.uid === $uid && ($version === 'web-v1' || $version === 'android-v1')",
+            ".write": "auth != null && auth.uid === $uid && ($version === 'web-v1' || $version === 'android-v1')",
+            ".validate": "newData.hasChildren(['welcomeSeen', 'skipped'])",
+            "welcomeSeen": { ".validate": "newData.isBoolean()" },
+            "skipped": { ".validate": "newData.isBoolean()" },
+            "dismissedPages": {
+              ".validate": "newData.hasChildren()",
+              "$index": { ".validate": "$index.matches(/^([0-9]|1[0-9]|2[0-3])$/) && newData.isString() && newData.val().length <= 64" }
+            },
+            "$other": { ".validate": false }
+          }
+        }
+      }
+    },
+    "carts": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid && newData.exists()",
+        ".validate": "newData.hasChild('updatedAt')",
+        "updatedAt": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= now + 1000" },
+        "lines": {
+          ".validate": "newData.hasChild('0') && (!newData.hasChild('2') || newData.hasChild('1')) && (!newData.hasChildren(['0','1']) || newData.child('0/id').val() !== newData.child('1/id').val()) && (!newData.hasChildren(['0','2']) || newData.child('0/id').val() !== newData.child('2/id').val()) && (!newData.hasChildren(['1','2']) || newData.child('1/id').val() !== newData.child('2/id').val())",
+          "$index": {
+            ".validate": "$index.matches(/^[0-2]$/) && newData.hasChildren(['id', 'quantity'])",
+            "id": { ".validate": "newData.val() === '1l' || newData.val() === '2l' || newData.val() === '5l'" },
+            "quantity": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 20" },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

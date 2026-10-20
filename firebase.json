@@ -1,17 +1,8 @@
 {
-  "functions": [{
-    "source": "functions",
-    "codebase": "commerce",
-    "runtime": "nodejs22",
-    "ignore": ["node_modules", ".git", "test", "scripts", "lib/test", "lib/scripts", "*.log"],
-    "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
-  }],
-  "firestore": { "rules": "firebase/firestore.rules", "indexes": "firebase/firestore.indexes.json" },
-  "storage": { "rules": "firebase/storage.rules" },
+  "database": { "rules": "firebase/database.rules.json" },
   "emulators": {
     "auth": { "port": 9099 },
-    "firestore": { "port": 8080 },
-    "functions": { "port": 5001 },
+    "database": { "port": 9000 },
     "ui": { "enabled": true, "port": 4000 },
     "singleProjectMode": true
   }

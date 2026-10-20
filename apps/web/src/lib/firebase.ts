@@ -59,17 +59,23 @@ export function waitDatabaseConnection(milliseconds = 15_000): Promise<void> {
   const { db } = getFirebaseServices();
   return new Promise((resolve, reject) => {
     let unsubscribe: (() => void) | undefined;
+    let settled = false;
     const timer = setTimeout(() => { unsubscribe?.(); reject(new StoreError("unavailable")); }, milliseconds);
     unsubscribe = onValue(ref(db, ".info/connected"), snapshot => {
-      if (snapshot.val() === true) { clearTimeout(timer); unsubscribe?.(); resolve(); }
-    }, reason => { clearTimeout(timer); unsubscribe?.(); reject(reason); });
+      if (snapshot.val() === true) { settled = true; clearTimeout(timer); unsubscribe?.(); resolve(); }
+    }, reason => { settled = true; clearTimeout(timer); unsubscribe?.(); reject(reason); });
+    if (settled) unsubscribe();
   });
 }
 export async function getServerValue(reference: DatabaseReference): Promise<DataSnapshot> {
   await waitDatabaseConnection();
   const value = await get(reference);
-  const connected = await get(ref(getFirebaseServices().db, ".info/connected"));
-  if (connected.val() !== true) throw new StoreError("OFFLINE");
+  // .info is local connection metadata. RTDB get() sends a server query and
+  // must not be used for this reserved path.
+  const connected = await new Promise<boolean>((resolve, reject) => {
+    onValue(ref(getFirebaseServices().db, ".info/connected"), snapshot => resolve(snapshot.val() === true), reject, { onlyOnce: true });
+  });
+  if (!connected) throw new StoreError("OFFLINE");
   return value;
 }
 export function databaseRecords(snapshot: DataSnapshot): { id: string; data: () => Record<string, unknown> }[] {

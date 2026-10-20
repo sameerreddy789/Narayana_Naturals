@@ -30,10 +30,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
     final store = LocalStore(preferences, config.mode);
     final backend = config.mode == BackendMode.demo
         ? DemoCommerceBackend(store)
-        : FirebaseCommerceBackend(
-            await config.initializeFirebase(),
-            config.mode,
-          );
+        : FirebaseCommerceBackend(await config.initializeFirebase(), config);
     final app = AppController(backend, store);
     controller = app;
     await app.start();

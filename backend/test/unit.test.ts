@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { HttpsError } from 'firebase-functions/v2/https';
-import { assertNoLivePreview, assertTransition, calculateTotals, parseAddress, parseLines,
-  parsePlaceRequest, parseQuoteRequest, parseStatusRequest, parseVariantRequest, requireAdmin, requirePhone,
+import { ApiError, assertNoLivePreview, assertTransition, calculateTotals, parseAddress, parseLines,
+  parsePlaceRequest, parseQuoteRequest, parseStatusRequest, parseVariantRequest, requireAdmin, requireEmail,
   type DeliveryTerms, type MachineCode, type PackTerms } from '../src/model.js';
 import { DEMO_PROJECT, PREVIEW_ADDRESS, requireDemoEmulators } from '../scripts/fixtures.js';
 
 function errorCode(fn: () => unknown, expected: MachineCode) {
-  assert.throws(fn, error => error instanceof HttpsError && (error.details as { code: string }).code === expected);
+  assert.throws(fn, error => error instanceof ApiError && error.code === expected);
 }
 const quote = { lines: [{ id: '1l', quantity: 2 }], address: PREVIEW_ADDRESS, channel: 'web' };
 const packs: PackTerms[] = [{ id: '1l', litres: 1, pricePaise: 45000, stock: 12, preview: true },
@@ -43,12 +42,13 @@ describe('contract input validation', () => {
       { phone: '+916000000001' }, { phone: '5000000001' }, { name: 'x'.repeat(101) }, { street: 'x'.repeat(301) },
       { name: 'ab\u0000cd' }]) errorCode(() => parseAddress({ ...PREVIEW_ADDRESS, ...patch }), 'INVALID_INPUT');
   });
-  test('requires a verified +91 phone claim, never a profile field', () => {
-    errorCode(() => requirePhone(undefined), 'AUTH_REQUIRED');
-    for (const phone_number of [undefined, '6000000001', '+12025550123', '+915000000001', 6000000001]) {
-      errorCode(() => requirePhone({ uid: 'customer', token: { phone_number } }), 'PHONE_REQUIRED');
+  test('requires an email password Auth account, never a delivery phone or profile field', () => {
+    errorCode(() => requireEmail(undefined), 'AUTH_REQUIRED');
+    for (const email of [undefined, 'invalid', 123, 'has space@example.com']) {
+      errorCode(() => requireEmail({ uid: 'customer', token: { email, firebase: { sign_in_provider: 'password' } } }), 'EMAIL_REQUIRED');
     }
-    assert.equal(requirePhone({ uid: 'customer', token: { phone_number: '+916000000001' } }).phone, '+916000000001');
+    errorCode(() => requireEmail({ uid: 'customer', token: { email: 'customer@example.com', firebase: { sign_in_provider: 'anonymous' } } }), 'EMAIL_REQUIRED');
+    assert.equal(requireEmail({ uid: 'customer', token: { email: 'customer@example.com', firebase: { sign_in_provider: 'password' } } }).email, 'customer@example.com');
   });
   test('only a boolean trusted Auth admin claim authorizes administration', () => {
     errorCode(() => requireAdmin(undefined), 'AUTH_REQUIRED');
@@ -96,10 +96,10 @@ describe('authoritative commerce math and transition policy', () => {
     errorCode(() => assertNoLivePreview(false, [false, true]), 'STORE_NOT_READY');
   });
   test('seed refuses missing, remote and real-project emulator configurations', () => {
-    const env = { GCLOUD_PROJECT: DEMO_PROJECT, FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080', FIREBASE_AUTH_EMULATOR_HOST: 'localhost:9099' };
+    const env = { GCLOUD_PROJECT: DEMO_PROJECT, FIREBASE_DATABASE_EMULATOR_HOST: '127.0.0.1:9000', FIREBASE_AUTH_EMULATOR_HOST: 'localhost:9099' };
     assert.equal(requireDemoEmulators(env), DEMO_PROJECT);
-    for (const patch of [{ GCLOUD_PROJECT: 'narayana-live' }, { FIRESTORE_EMULATOR_HOST: undefined },
-      { FIREBASE_AUTH_EMULATOR_HOST: undefined }, { FIRESTORE_EMULATOR_HOST: 'firestore.googleapis.com:443' },
-      { FIRESTORE_EMULATOR_HOST: 'http://localhost:8080' }]) assert.throws(() => requireDemoEmulators({ ...env, ...patch }), /Refusing fixture access/);
+    for (const patch of [{ GCLOUD_PROJECT: 'narayana-live' }, { FIREBASE_DATABASE_EMULATOR_HOST: undefined },
+      { FIREBASE_AUTH_EMULATOR_HOST: undefined }, { FIREBASE_DATABASE_EMULATOR_HOST: 'firebaseio.com:443' },
+      { FIREBASE_DATABASE_EMULATOR_HOST: 'http://localhost:9000' }]) assert.throws(() => requireDemoEmulators({ ...env, ...patch }), /Refusing fixture access/);
   });
 });
