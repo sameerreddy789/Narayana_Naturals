@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Leaf, MapPin, Minus, Plus, ShoppingBag, Truck, X } from "lucide-react";
 import { cartSubtotal, money, type Address, type PackId } from "@/lib/demo";
 import { PACK_LITRES, errorCode, languageText, validateAddress, type DeliveryCheck } from "@/lib/commerce";
+import { privateDraft } from "@/lib/firebase";
 import { activeCheckoutReview, canReplaceCheckoutReview, checkoutHasContent, readCheckoutReview, removeCheckoutReview, retainCheckoutAttempt, saveCheckoutReview, type CheckoutReview } from "@/lib/checkout";
 import { usePreview } from "./preview-provider";
 import { ProductArt } from "./product-art";
@@ -23,8 +24,9 @@ function PackCards() {
   return <div className="product-grid">{state.variants.map((variant, index) => <article className="product-card" key={variant.id}>
     <Link className={"product-card-art art-" + variant.id} href={"/oil/groundnut?pack=" + variant.id} aria-label={t("View", "చూడండి") + " " + variant.litres + " " + t("litre pack", "లీటర్ల ప్యాక్")}><ProductArt pack={variant.id} /></Link>
     <div className="product-card-content"><div className="product-card-title"><h3>{variant.litres} {t(variant.litres === 1 ? "litre" : "litres", "లీటర్లు")}</h3><strong>{money(variant.pricePaise)}</strong></div><p>{labels[index]}</p>
-      <button className="button secondary" onClick={() => void addPack(variant.id)} disabled={!ready || !accountReady || cartBusy || !variant.enabled || variant.stock === 0}>
-        {!variant.enabled ? t("Unavailable", "అందుబాటులో లేదు") : variant.stock === 0 ? t("Out of stock", "స్టాక్ లేదు") : cartBusy ? t("Updating cart…", "కార్ట్ మారుతోంది…") : t("Add to cart", "కార్ట్‌లో చేర్చండి")}<Plus size={17} />
+      {privateDraft && <p className="small-note">{t("Example price", "నమూనా ధర")}</p>}
+      <button className="button secondary" onClick={() => void addPack(variant.id)} disabled={!ready || !accountReady || cartBusy || !variant.enabled || variant.stock === 0 || (privateDraft && variant.stockConfirmed === false)}>
+        {privateDraft && variant.stockConfirmed === false ? t("Stock pending", "స్టాక్ నిర్ధారణ కావాలి") : !variant.enabled ? t("Unavailable", "అందుబాటులో లేదు") : variant.stock === 0 ? t("Out of stock", "స్టాక్ లేదు") : cartBusy ? t("Updating cart…", "కార్ట్ మారుతోంది…") : t("Add to cart", "కార్ట్‌లో చేర్చండి")}<Plus size={17} />
       </button>
     </div>
   </article>)}</div>;
@@ -36,14 +38,14 @@ export function HomePage() {
     <section className="hero page-width"><div className="hero-copy"><h1>{t("From our Ghani.", "మా ఘానీ నుంచి.")}<br /><span>{t("To your kitchen.", "మీ వంటింటికి.")}</span></h1><p>{t("Groundnut oil made the traditional way in a bull-driven wooden Ghani. A simple choice for your everyday cooking.", "ఎద్దుల సాయంతో నడిచే చెక్క ఘానీలో సాంప్రదాయ పద్ధతిలో తయారైన వేరుశెనగ నూనె. మీ రోజువారీ వంట కోసం.")}</p><div className="hero-actions"><Link className="button primary" href="/shop">{t("Explore our oil", "మా నూనె చూడండి")}<ArrowRight size={19} /></Link><Link className="text-link" href="/our-ghani">{t("Meet our Ghani", "మా ఘానీ గురించి")}<ArrowRight size={16} /></Link></div><div className="hero-facts"><span><Leaf size={17} />{t("Bull-driven Ghani", "ఎద్దులతో నడిచే ఘానీ")}</span><span><ShoppingBag size={17} />{t("1, 2 & 5 litre packs", "1, 2 మరియు 5 లీటర్లు")}</span></div></div><div className="hero-art"><div className="hero-art-title">{t("Ghani groundnut oil", "ఘానీ వేరుశెనగ నూనె")}</div><div className="hero-pack-collection"><ProductArt pack="2l" className="hero-pack-back" /><ProductArt pack="1l" className="hero-pack-front" /></div><div className="hero-art-bottom"><span>{t("Traditional by nature.", "సాంప్రదాయ సహజత్వం.")}</span><span>1 L · 2 L · 5 L</span></div><p className="art-caption">{t("Packaging concept · Actual product photos to follow", "ప్యాకేజింగ్ నమూనా · అసలు ఉత్పత్తి ఫోటోలు తరువాత")}</p></div></section>
     <section className="shop-section page-width"><div className="section-heading"><div><h2>{t("A pack for your kitchen", "మీ వంటింటికి ఒక ప్యాక్")}</h2><p>{t("One groundnut oil. Three useful sizes.", "ఒక వేరుశెనగ నూనె. మూడు పరిమాణాలు.")}</p></div><Link href="/shop" className="text-link">{t("View all packs", "అన్ని ప్యాక్‌లు చూడండి")}<ArrowRight size={16} /></Link></div><PackCards /></section>
     <section className="process-section"><div className="page-width process-inner"><div><h2>{t("The wooden Ghani is where our story begins.", "చెక్క ఘానీతో మా కథ మొదలవుతుంది.")}</h2><p>{t("Narayana Naturals brings a traditional bull-driven process to the groundnut oil you choose for your home. We want you to know the process behind your purchase.", "నారాయణ నేచురల్స్ సాంప్రదాయ ఎద్దులతో నడిచే ఘానీ పద్ధతిలో వేరుశెనగ నూనె అందిస్తుంది. మీ కొనుగోలు వెనుక పద్ధతిని తెలుసుకోండి.")}</p><Link href="/our-ghani" className="button light">{t("Read our story", "మా కథ చదవండి")}<ArrowRight size={18} /></Link></div><div className="process-words"><div><span>{t("The groundnuts", "వేరుశెనగలు")}</span><p>{t("The ingredient at the heart of our oil.", "మా నూనెలో ప్రధాన పదార్థం.")}</p></div><div><span>{t("The wooden Ghani", "చెక్క ఘానీ")}</span><p>{t("The traditional bull-driven extraction process.", "ఎద్దులతో నడిచే సాంప్రదాయ పద్ధతి.")}</p></div><div><span>{t("Your everyday kitchen", "మీ రోజువారీ వంటింటి")}</span><p>{t("Choose the pack that works for your household.", "మీ కుటుంబానికి సరైన ప్యాక్‌ను ఎంచుకోండి.")}</p></div></div></div></section>
-    <section className="delivery-strip page-width"><Truck size={34} strokeWidth={1.4} /><div><h2>{t("Near home or further away", "దగ్గరగా లేదా దూరంగా")}</h2><p>{t("Local delivery around Chittoor and Tirupati, with courier shipping planned for eligible PIN codes across India.", "చిత్తూరు మరియు తిరుపతి ప్రాంతాలకు స్థానిక డెలివరీ, అర్హమైన భారతదేశ పిన్ కోడ్‌లకు కొరియర్ షిప్పింగ్ ప్రణాళిక.")}</p></div><Link href="/delivery" className="text-link">{t("Check delivery", "డెలివరీ చూడండి")}<ArrowRight size={18} /></Link></section>
+    <section className="delivery-strip page-width"><Truck size={34} strokeWidth={1.4} /><div><h2>{privateDraft ? t("Delivery terms are pending", "డెలివరీ వివరాలు నిర్ధారించాలి") : t("Near home or further away", "దగ్గరగా లేదా దూరంగా")}</h2><p>{privateDraft ? t("This is a private demonstration. Delivery areas, charges and stock must be confirmed before orders open.", "ఇది ప్రైవేట్ ప్రదర్శన. ఆర్డర్లు ప్రారంభించే ముందు డెలివరీ ప్రాంతాలు, ఛార్జీలు మరియు స్టాక్ నిర్ధారించాలి.") : t("Local delivery around Chittoor and Tirupati, with courier shipping planned for eligible PIN codes across India.", "చిత్తూరు మరియు తిరుపతి ప్రాంతాలకు స్థానిక డెలివరీ, అర్హమైన భారతదేశ పిన్ కోడ్‌లకు కొరియర్ షిప్పింగ్ ప్రణాళిక.")}</p></div><Link href="/delivery" className="text-link">{t("Delivery information", "డెలివరీ సమాచారం")}<ArrowRight size={18} /></Link></section>
   </>;
 }
 
 export function ShopPage() {
   const { t, mode } = usePreview();
   return <section className="page-width standard-page"><PageHeading title={t("Good oil. Your kind of pack.", "మంచి నూనె. మీకు సరైన ప్యాక్.")}
-    description={mode === "firebase" ? t("Bull-driven wooden Ghani groundnut oil in 1, 2 and 5 litre packs. Choose your pack and review delivery at checkout.", "ఎద్దులతో నడిచే చెక్క ఘానీ వేరుశెనగ నూనె 1, 2 మరియు 5 లీటర్ల ప్యాక్‌లలో. ప్యాక్ ఎంచుకుని చెక్అవుట్‌లో డెలివరీ చూడండి.") : t("Bull-driven wooden Ghani groundnut oil in 1, 2 and 5 litre packs. Prices below are illustrative for this preview.", "ఎద్దులతో నడిచే చెక్క ఘానీ వేరుశెనగ నూనె 1, 2 మరియు 5 లీటర్ల ప్యాక్‌లలో. ఈ ప్రివ్యూలో ధరలు నమూనా మాత్రమే.")} />
+    description={mode === "firebase" && !privateDraft ? t("Bull-driven wooden Ghani groundnut oil in 1, 2 and 5 litre packs. Choose your pack and review delivery at checkout.", "ఎద్దులతో నడిచే చెక్క ఘానీ వేరుశెనగ నూనె 1, 2 మరియు 5 లీటర్ల ప్యాక్‌లలో. ప్యాక్ ఎంచుకుని చెక్అవుట్‌లో డెలివరీ చూడండి.") : t("Bull-driven wooden Ghani groundnut oil in 1, 2 and 5 litre packs. Prices below are illustrative for this preview.", "ఎద్దులతో నడిచే చెక్క ఘానీ వేరుశెనగ నూనె 1, 2 మరియు 5 లీటర్ల ప్యాక్‌లలో. ఈ ప్రివ్యూలో ధరలు నమూనా మాత్రమే.")} />
     <PackCards /><p className="small-note">{t("Pack artwork is a packaging concept. Actual product photographs will be added with the owner's assets.", "ప్యాక్ చిత్రాలు ప్యాకేజింగ్ నమూనాలు. అసలు ఉత్పత్తి ఫోటోలు యజమాని ఆస్తులతో చేర్చబడతాయి.")}</p>
   </section>;
 }
@@ -79,7 +81,8 @@ export function ProductPage() {
   if (!catalogueReady) return <section className="page-width standard-page"><DataStatus loading={t("Loading oil details…", "నూనె వివరాలు లోడ్ అవుతున్నాయి…")} /></section>;
   if (catalogueError) return <section className="page-width standard-page"><DataStatus error={catalogueError} /></section>;
   if (!catalogueAvailable || !product || !variant) return <section className="page-width standard-page"><EmptyState title={t("This oil pack is unavailable", "ఈ నూనె ప్యాక్ అందుబాటులో లేదు")} description={t("Return to all packs to see what is available.", "అందుబాటులో ఉన్న ప్యాక్‌లను చూడడానికి అన్ని ప్యాక్‌లకు వెళ్లండి.")} action={t("All packs", "అన్ని ప్యాక్‌లు")} /></section>;
-  const unavailable = !variant.enabled || variant.stock === 0;
+  const stockPending = privateDraft && variant.stockConfirmed === false;
+  const unavailable = stockPending || !variant.enabled || variant.stock === 0;
   return <section className="page-width standard-page">
     <Link className="back-link" href="/shop"><ArrowLeft size={17} aria-hidden="true" />{t("All packs", "అన్ని ప్యాక్‌లు")}</Link>
     <div className="product-detail"><div className={"product-detail-art art-" + pack}><ProductArt pack={pack} /><p>{t("Packaging concept", "ప్యాకేజింగ్ నమూనా")}</p></div>
@@ -87,7 +90,8 @@ export function ProductPage() {
         <fieldset className="pack-selector" disabled={checking || adding}><legend>{t("Choose your pack", "మీ ప్యాక్ ఎంచుకోండి")}</legend><div>{state.variants.map(variant => <label key={variant.id} className={"pack-option " + (pack === variant.id ? "selected" : "")}>
           <input type="radio" name="pack" value={variant.id} checked={pack === variant.id} onChange={() => { setPack(variant.id); setQuantity(1); }} /><strong>{variant.litres} L</strong><span>{money(variant.pricePaise)}</span>
         </label>)}</div></fieldset>
-        <div className="price-stock"><strong>{money(variant.pricePaise)}</strong><span className={"stock-label " + (unavailable ? "unavailable" : "")}><span />{unavailable ? t("Unavailable", "అందుబాటులో లేదు") : mode === "firebase" ? t("In stock", "స్టాక్ ఉంది") : t("Available in preview", "ప్రివ్యూలో అందుబాటులో ఉంది")}</span></div>
+        <div className="price-stock"><strong>{money(variant.pricePaise)}</strong><span className={"stock-label " + (unavailable ? "unavailable" : "")}><span />{stockPending ? t("Stock pending", "స్టాక్ నిర్ధారణ కావాలి") : unavailable ? t("Unavailable", "అందుబాటులో లేదు") : mode === "firebase" && !privateDraft ? t("In stock", "స్టాక్ ఉంది") : t("Available in preview", "ప్రివ్యూలో అందుబాటులో ఉంది")}</span></div>
+        {privateDraft && <p className="small-note">{t("Example price. Orders are paused while stock and delivery terms are confirmed.", "నమూనా ధర. స్టాక్ మరియు డెలివరీ వివరాలు నిర్ధారించే వరకు ఆర్డర్లు నిలిపివేయబడ్డాయి.")}</p>}
         <div className="quantity-row"><span>{t("Quantity", "పరిమాణం")}</span><div className="quantity-control">
           <button aria-label={t("Decrease quantity", "పరిమాణం తగ్గించండి")} disabled={quantity <= 1 || checking || adding} onClick={() => setQuantity(quantity => quantity - 1)}><Minus size={16} /></button><span aria-live="polite">{quantity}</span>
           <button aria-label={t("Increase quantity", "పరిమాణం పెంచండి")} disabled={quantity >= Math.min(variant.stock, 20) || checking || adding} onClick={() => setQuantity(quantity => quantity + 1)}><Plus size={16} /></button>
@@ -98,9 +102,9 @@ export function ProductPage() {
         <div className="delivery-check"><label htmlFor="product-pin"><MapPin size={17} />{t("Check delivery to your PIN", "మీ పిన్‌కు డెలివరీ చూడండి")}</label><div>
           <input id="product-pin" inputMode="numeric" maxLength={6} disabled={checking} value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, ""))} placeholder={mode === "firebase" ? t("Six-digit PIN", "ఆరు అంకెల పిన్") : "e.g. 517001"} />
           <button className="button secondary" disabled={pin.length !== 6 || checking} onClick={() => void check()}>{checking ? t("Checking…", "చూస్తోంది…") : t("Check", "చూడండి")}</button>
-        </div>{delivery && <p role="status" className="success-text">{delivery.local ? t("Local delivery", "స్థానిక డెలివరీ") : t("Courier shipping", "కొరియర్ షిప్పింగ్")} · {delivery.estimate} · {money(delivery.feePaise)} {delivery.preview ? t("sample delivery", "నమూనా డెలివరీ") : t("estimated delivery", "డెలివరీ అంచనా")}</p>}
+        </div>{delivery && <p role="status" className="success-text">{privateDraft ? t("Demonstration only. Delivery terms are pending; this check does not book delivery.", "ప్రదర్శన మాత్రమే. డెలివరీ వివరాలు నిర్ధారించాలి; ఈ తనిఖీతో డెలివరీ బుక్ చేయబడదు.") : <>{delivery.local ? t("Local delivery", "స్థానిక డెలివరీ") : t("Courier shipping", "కొరియర్ షిప్పింగ్")} · {delivery.estimate} · {money(delivery.feePaise)} {delivery.preview ? t("sample delivery", "నమూనా డెలివరీ") : t("estimated delivery", "డెలివరీ అంచనా")}</>}</p>}
           {deliveryError && <p role="alert" className="error-text">{deliveryError}</p>}
-          <p className="small-note">{t("The final delivery fee and total are reviewed at checkout.", "తుది డెలివరీ ఛార్జీ మరియు మొత్తం చెక్అవుట్‌లో చూడవచ్చు.")}</p>
+          <p className="small-note">{privateDraft ? t("PIN 517502 is available for demonstration checks. Actual serviceability and fees are unconfirmed.", "ప్రదర్శన తనిఖీలకు పిన్ 517502 వాడవచ్చు. అసలు డెలివరీ అందుబాటు మరియు ఛార్జీలు నిర్ధారించాలి.") : t("The final delivery fee and total are reviewed at checkout.", "తుది డెలివరీ ఛార్జీ మరియు మొత్తం చెక్అవుట్‌లో చూడవచ్చు.")}</p>
         </div>
       </div>
     </div>
@@ -193,8 +197,8 @@ export function CheckoutPage() {
   const quote = activeReview?.quote;
   const expired = !!quote && Date.parse(quote.expiresAt) <= now;
   const stockAvailable = state.cart.every(line => { const variant = state.variants.find(variant => variant.id === line.id); return !!variant?.enabled && line.quantity <= variant.stock; });
-  const canReview = !!uid && hydratedAccount === uid && accountReady && !!state.cart.length && !!settings?.orderingEnabled && catalogueReady && catalogueAvailable && stockAvailable && !cartBusy && (mode === "demo" || !offline);
-  const canPlace = !!uid && hydratedAccount === uid && accountReady && (activeReview?.attempted ? !cartBusy && (mode === "demo" || !offline) : canReview);
+  const canReview = !privateDraft && !!uid && hydratedAccount === uid && accountReady && !!state.cart.length && !!settings?.orderingEnabled && catalogueReady && catalogueAvailable && stockAvailable && !cartBusy && (mode === "demo" || !offline);
+  const canPlace = !privateDraft && !!uid && hydratedAccount === uid && accountReady && (activeReview?.attempted ? !cartBusy && (mode === "demo" || !offline) : canReview);
   const subtotal = cartSubtotal(state.cart, state.variants);
   function sameCheckout(requestUid: string, requestOperation: number) {
     return currentAccount.current.uid === requestUid && currentAccount.current.ready && currentAccount.current.accountReady && hydratedUid.current === requestUid && operation.current === requestOperation;
@@ -249,8 +253,8 @@ export function CheckoutPage() {
     } finally { if (sameCheckout(requestUid, requestOperation)) { busyRef.current = false; setBusy(false); } }
   }
   return <section className="page-width standard-page"><PageHeading title={t("Make it yours", "మీ కోసం ఆర్డర్ చేయండి")}
-    description={mode === "firebase" ? t("Review delivery and the full total before placing your cash-on-delivery order.", "నగదు చెల్లింపు ఆర్డర్ ముందు డెలివరీ మరియు పూర్తి మొత్తం చూడండి.") : t("Check your details and delivery before placing a clearly labelled preview order.", "ప్రివ్యూ ఆర్డర్ ముందు వివరాలు మరియు డెలివరీని సరిచూడండి.")} />
-    {!ready ? <DataStatus loading={t("Loading checkout…", "చెక్అవుట్ లోడ్ అవుతోంది…")} /> : !state.user ? <div className="sign-in-prompt"><UserNotice /><Link href="/sign-in?returnTo=/checkout" className="button primary">{t("Sign in to continue", "కొనసాగించడానికి సైన్ ఇన్ చేయండి")}<ArrowRight size={18} /></Link><Link href="/cart" className="text-link">{t("Back to cart", "కార్ట్‌కు తిరిగి వెళ్లండి")}</Link></div>
+    description={privateDraft ? t("This private demonstration does not accept orders or payments.", "ఈ ప్రైవేట్ ప్రదర్శనలో ఆర్డర్లు లేదా చెల్లింపులు తీసుకోబడవు.") : mode === "firebase" ? t("Review delivery and the full total before placing your cash-on-delivery order.", "నగదు చెల్లింపు ఆర్డర్ ముందు డెలివరీ మరియు పూర్తి మొత్తం చూడండి.") : t("Check your details and delivery before placing a clearly labelled preview order.", "ప్రివ్యూ ఆర్డర్ ముందు వివరాలు మరియు డెలివరీని సరిచూడండి.")} />
+    {privateDraft ? <EmptyState title={t("Orders are paused", "ఆర్డర్లు నిలిపివేయబడ్డాయి")} description={t("View the example packs while prices, stock and delivery terms are confirmed. No purchase or delivery is booked here.", "ధరలు, స్టాక్ మరియు డెలివరీ వివరాలు నిర్ధారించే వరకు నమూనా ప్యాక్‌లు చూడండి. ఇక్కడ కొనుగోలు లేదా డెలివరీ బుక్ చేయబడదు.")} action={t("View oil packs", "నూనె ప్యాక్‌లు చూడండి")} /> : !ready ? <DataStatus loading={t("Loading checkout…", "చెక్అవుట్ లోడ్ అవుతోంది…")} /> : !state.user ? <div className="sign-in-prompt"><UserNotice /><Link href="/sign-in?returnTo=/checkout" className="button primary">{t("Sign in to continue", "కొనసాగించడానికి సైన్ ఇన్ చేయండి")}<ArrowRight size={18} /></Link><Link href="/cart" className="text-link">{t("Back to cart", "కార్ట్‌కు తిరిగి వెళ్లండి")}</Link></div>
       : !accountReady ? <DataStatus error={accountError} loading={t("Loading your saved details and cart…", "సేవ్ చేసిన వివరాలు మరియు కార్ట్ లోడ్ అవుతున్నాయి…")} />
       : hydratedAccount !== uid ? <DataStatus error={recoveryError} loading={t("Restoring your checkout…", "మీ చెక్అవుట్‌ను తిరిగి పొందుతున్నాము…")} onRetry={retryRecovery} />
       : !checkoutHasContent(state.cart.length, activeReview) ? <EmptyState title={t("Choose your oil first", "ముందుగా నూనె ఎంచుకోండి")} description={t("Add a pack to your cart to begin checkout.", "చెక్అవుట్ కోసం కార్ట్‌లో ప్యాక్ చేర్చండి.")} />
@@ -291,6 +295,6 @@ export function CheckoutPage() {
 }
 
 function UserNotice() {
-  const { mode, t } = usePreview();
-  return <><h2>{t("Keep your orders in one place", "మీ ఆర్డర్లను ఒకే చోట ఉంచండి")}</h2><p>{mode === "demo" ? t("Try a demo email account to see order history and the welcome guide.", "ఆర్డర్ చరిత్ర మరియు స్వాగత గైడ్ కోసం డెమో ఈమెయిల్ ఖాతా ప్రయత్నించండి.") : t("Sign in with your email to save your address, follow your orders and continue checkout.", "చిరునామా సేవ్ చేయడానికి, ఆర్డర్లు ట్రాక్ చేయడానికి మరియు చెక్అవుట్ కోసం మీ ఈమెయిల్‌తో సైన్ ఇన్ చేయండి.")}</p></>;
+  const { t } = usePreview();
+  return <><h2>{t("Keep your orders in one place", "మీ ఆర్డర్లను ఒకే చోట ఉంచండి")}</h2><p>{t("Sign in with your email to save your address, follow your orders and continue checkout.", "చిరునామా సేవ్ చేయడానికి, ఆర్డర్లు ట్రాక్ చేయడానికి మరియు చెక్అవుట్ కోసం మీ ఈమెయిల్‌తో సైన్ ఇన్ చేయండి.")}</p></>;
 }

@@ -24,17 +24,27 @@ class FirebaseCommerceBackend implements CommerceBackend {
   final AppConfig config;
   @override
   BackendMode get mode => config.mode;
+  @override
+  bool get privateDraft => config.privateDraft;
   final FirebaseAuth auth;
   final FirebaseDatabase db;
   @override
   CustomerIdentity? get currentUser => _identity(auth.currentUser);
-  CustomerIdentity? _identity(User? user) =>
-      user == null ? null : CustomerIdentity(user.uid, user.email);
+  CustomerIdentity? _identity(User? user) => user == null
+      ? null
+      : CustomerIdentity(user.uid, user.email);
   @override
   Stream<CustomerIdentity?> authChanges() =>
       auth.authStateChanges().map(_identity);
   void _requireUid(String uid) {
     if (auth.currentUser?.uid != uid) throw const AppFailure('AUTH_REQUIRED');
+  }
+
+  AppFailure _failure(Object error) {
+    final failure = AppFailure.from(error);
+    return privateDraft && failure.code == 'permission-denied'
+        ? const AppFailure('TESTER_REQUIRED')
+        : failure;
   }
 
   Future<void> _connected() async {
@@ -59,15 +69,17 @@ class FirebaseCommerceBackend implements CommerceBackend {
       return result;
     } catch (error) {
       if (config.mode == BackendMode.emulator && AppConfig.internalBuild) {
-        final code = error is FirebaseException ? error.code : error.runtimeType;
+        final code = error is FirebaseException
+            ? error.code
+            : error.runtimeType;
         debugPrint('NN_RTDB_READ_ERROR stage=$stage code=$code');
       }
-      rethrow;
+      throw _failure(error);
     }
   }
 
   Query _orders(String uid) => db
-      .ref('commerce/ordersByUser/$uid')
+      .ref('${config.commerceRoot}/ordersByUser/$uid')
       .orderByChild('createdAt')
       .limitToLast(50);
   List<OrderRecord> _parseOrders(DataSnapshot snapshot) =>
@@ -89,6 +101,11 @@ class FirebaseCommerceBackend implements CommerceBackend {
       }
       final product = stringMap(values['product']);
       final variants = stringMap(values['variants']);
+      final settings = StoreSettings.fromJson(values['settings']);
+      if (settings.preview && !privateDraft) {
+        result.addError(const AppFailure('STORE_NOT_READY'));
+        return;
+      }
       result.add(
         Catalogue(
           product: product['published'] == true
@@ -100,14 +117,14 @@ class FirebaseCommerceBackend implements CommerceBackend {
                   .map((entry) => Variant.fromJson(entry.key, entry.value))
                   .toList()
                 ..sort((a, b) => a.litres.compareTo(b.litres)),
-          settings: StoreSettings.fromJson(values['settings']),
+          settings: settings,
           fromCache: !connected,
         ),
       );
     }
 
     void failure(Object error) {
-      if (!result.isClosed) result.addError(AppFailure.from(error));
+      if (!result.isClosed) result.addError(_failure(error));
     }
 
     result = StreamController<Catalogue>(
@@ -119,9 +136,9 @@ class FirebaseCommerceBackend implements CommerceBackend {
           }, onError: failure),
         );
         for (final entry in {
-          'product': 'commerce/products/groundnut-oil',
-          'variants': 'commerce/variants',
-          'settings': 'commerce/publicContent/storefront',
+          'product': '${config.commerceRoot}/products/groundnut-oil',
+          'variants': '${config.commerceRoot}/variants',
+          'settings': '${config.commerceRoot}/publicContent/storefront',
         }.entries) {
           subscriptions.add(
             db.ref(entry.value).onValue.listen((event) {
@@ -191,7 +208,7 @@ class FirebaseCommerceBackend implements CommerceBackend {
     final values = <String, DataSnapshot>{};
     late StreamController<AccountSnapshot> result;
     void failure(Object error) {
-      if (!result.isClosed) result.addError(AppFailure.from(error));
+      if (!result.isClosed) result.addError(_failure(error));
     }
 
     void emit() {
@@ -327,16 +344,28 @@ class FirebaseCommerceBackend implements CommerceBackend {
   }
 
   Future<Object?> _api(String method, Object data) async {
+    config.validate();
     final user = auth.currentUser;
     if (user == null) throw const AppFailure('AUTH_REQUIRED');
     final base = config.apiUri.toString().replaceFirst(RegExp(r'/$'), '');
+    final idToken = await user.getIdToken();
+    if (idToken == null || idToken.isEmpty) {
+      throw const AppFailure('AUTH_REQUIRED');
+    }
     final headers = <String, String>{
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer ${await user.getIdToken()}',
+      'Authorization': 'Bearer $idToken',
     };
-    if (mode == BackendMode.firebase && config.appCheck != 'off') {
-      final token = await FirebaseAppCheck.instanceFor(app: app).getToken();
-      if (token != null) headers['X-Firebase-AppCheck'] = token;
+    if (mode == BackendMode.firebase) {
+      try {
+        final token = await FirebaseAppCheck.instanceFor(app: app).getToken();
+        if (token == null || token.isEmpty) {
+          throw const AppFailure('APP_CHECK_REQUIRED');
+        }
+        headers['X-Firebase-AppCheck'] = token;
+      } catch (_) {
+        throw const AppFailure('APP_CHECK_REQUIRED');
+      }
     }
     try {
       final response = await http
@@ -367,16 +396,26 @@ class FirebaseCommerceBackend implements CommerceBackend {
   Future<CheckoutQuote> quote(
     List<CartLine> lines,
     DeliveryAddress address,
-  ) async => CheckoutQuote.fromJson(
-    await _api('quoteCheckout', {
-      'lines': lines.map((line) => line.toJson()).toList(),
-      'address': address.toJson(),
-      'channel': 'android',
-    }),
-  );
+  ) async {
+    final quote = CheckoutQuote.fromJson(
+      await _api('quoteCheckout', {
+        'lines': lines.map((line) => line.toJson()).toList(),
+        'address': address.toJson(),
+        'channel': 'android',
+      }),
+    );
+    if (quote.preview && !privateDraft) {
+      throw const AppFailure('STORE_NOT_READY');
+    }
+    return quote;
+  }
+
   @override
   Future<String> placeCod(PendingCheckout checkout) async {
     _requireUid(checkout.uid);
+    if (privateDraft || checkout.quote.preview) {
+      throw const AppFailure('STORE_NOT_READY');
+    }
     final id = stringMap(
       await _api('placeCodOrder', {
         'quoteId': checkout.quote.quoteId,
@@ -393,11 +432,17 @@ class FirebaseCommerceBackend implements CommerceBackend {
     if (!RegExp(r'^[A-Za-z0-9_-]{8,128}$').hasMatch(orderId)) {
       throw const AppFailure('ORDER_NOT_FOUND');
     }
-    final value = await _read(db.ref('commerce/ordersByUser/$uid/$orderId'));
+    final value = await _read(
+      db.ref('${config.commerceRoot}/ordersByUser/$uid/$orderId'),
+    );
     if (!value.exists || stringMap(value.value)['uid'] != uid) {
       throw const AppFailure('ORDER_NOT_FOUND');
     }
-    return OrderRecord.fromJson(value.value);
+    final order = OrderRecord.fromJson(value.value);
+    if (order.preview && !privateDraft) {
+      throw const AppFailure('STORE_NOT_READY');
+    }
+    return order;
   }
 
   @override

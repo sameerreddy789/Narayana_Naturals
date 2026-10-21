@@ -47,6 +47,7 @@ class Variant {
     required this.pricePaise,
     required this.stock,
     required this.enabled,
+    this.stockConfirmed = true,
   });
   factory Variant.fromJson(String id, Object? value) {
     final data = stringMap(value);
@@ -56,6 +57,7 @@ class Variant {
       pricePaise: intValue(data['pricePaise']),
       stock: intValue(data['stock']),
       enabled: data['enabled'] == true,
+      stockConfirmed: data['stockConfirmed'] != false,
     );
   }
   final String id;
@@ -63,14 +65,18 @@ class Variant {
   final int pricePaise;
   final int stock;
   final bool enabled;
-  bool get available => enabled && stock > 0 && pricePaise > 0;
-  int get quantityLimit => math.min(20, math.max(0, stock));
+  final bool stockConfirmed;
+  bool get available =>
+      enabled && stockConfirmed && stock > 0 && pricePaise > 0;
+  int get quantityLimit =>
+      stockConfirmed ? math.min(20, math.max(0, stock)) : 0;
   Variant withStock(int value) => Variant(
     id: id,
     litres: litres,
     pricePaise: pricePaise,
     stock: value,
     enabled: enabled,
+    stockConfirmed: stockConfirmed,
   );
 }
 

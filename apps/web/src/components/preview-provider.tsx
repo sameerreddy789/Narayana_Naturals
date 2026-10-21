@@ -8,7 +8,7 @@ import { limitToLast, onValue, orderByChild, query, ref, runTransaction, serverT
 import { BrandLogo } from "./brand-logo";
 import { cartSubtotal, deliveryQuote, initialPreview, readPreview, type Address, type CartLine, type DemoOrder, type Language, type PackId, type PreviewState, type Variant } from "@/lib/demo";
 import { DEMO_PRODUCT, EMPTY_ONBOARDING, PACK_IDS, StoreError, errorMessage, mergeCartEdit, mergeGuestCart, removePurchasedLines, parseCart, parseOnboarding, parseOrder, parseProduct, parseQuote, parseSettings, parseVariant, validateAddress, type CheckoutQuote, type DeliveryCheck, type Onboarding, type Product, type StorefrontSettings } from "@/lib/commerce";
-import { backendMode, commerceApi, databaseRecords, getFirebaseServices, getServerValue, waitDatabaseConnection, type BackendMode } from "@/lib/firebase";
+import { assertCurrentStoreRecord, backendMode, commerceApi, commerceRoot, databaseRecords, getFirebaseServices, getServerValue, privateDraft, waitDatabaseConnection, type BackendMode } from "@/lib/firebase";
 
 const DEMO_STORAGE_KEY = "narayana-naturals-preview-v2";
 const GUEST_STORAGE_KEY = "narayana-naturals-web-guest-v1";
@@ -50,7 +50,7 @@ type Context = {
   checkDelivery: (pin: string, lines: CartLine[]) => Promise<DeliveryCheck>;
   quoteCheckout: (address: Address) => Promise<CheckoutQuote>;
   placeOrder: (quote: CheckoutQuote, idempotencyKey: string) => Promise<string>;
-  watchOrder: (id: string, receive: (order: DemoOrder | null) => void, fail: (reason: unknown) => void) => Unsubscribe;
+  watchOrder: (id: string, receive: (order: DemoOrder | null) => void, fail: (reason: unknown) => void, owner?: boolean) => Unsubscribe;
   retryConnection: () => void;
   notify: (message: string, error?: boolean) => void;
 };
@@ -78,6 +78,10 @@ function deadline<T>(operation: Promise<T>, milliseconds = 20_000): Promise<T> {
 function newState(): PreviewState {
   const state = initialPreview();
   return backendMode === "demo" ? state : { ...state, variants: [] };
+}
+
+function parseStoreOrder(id: string, data: unknown): DemoOrder | null {
+  return assertCurrentStoreRecord(parseOrder(id, data));
 }
 
 export function PreviewProvider({ children }: { children: ReactNode }) {
@@ -226,15 +230,21 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         watch(addressRef, data => data ? validateAddress(data as Address) : undefined, address => commit(current => ({ ...current, addresses: address ? { [user.uid]: address } : {} }))),
         watch(onboardingRef, parseOnboarding, progress => applyOnboarding(user.uid, progress)),
         watch(cartRef, parseCart, lines => commit(current => ({ ...current, cart: lines }))),
-        onValue(query(ref(db, `commerce/ordersByUser/${user.uid}`), orderByChild("createdAt"), limitToLast(50)), snapshot => {
+        onValue(query(ref(db, `${commerceRoot}/ordersByUser/${user.uid}`), orderByChild("createdAt"), limitToLast(50)), snapshot => {
           if (!sameAccount(user.uid, scope)) return;
           try {
-            const orders = databaseRecords(snapshot).map(entry => parseOrder(entry.id, entry.data())).filter((order): order is DemoOrder => !!order).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+            const orders = databaseRecords(snapshot).map(entry => parseStoreOrder(entry.id, entry.data())).filter((order): order is DemoOrder => !!order).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
             if (orders.some(order => order.uid !== user.uid)) throw new StoreError("INVALID_DATA");
             commit(current => ({ ...current, orders }));
             setOrdersIssue(undefined); setOrdersReady(true);
           } catch (reason) { setOrdersIssue(reason); setOrdersReady(true); }
-        }, reason => { if (sameAccount(user.uid, scope)) { setOrdersIssue(reason); setOrdersReady(true); } }),
+        }, reason => {
+          if (sameAccount(user.uid, scope)) {
+            const code = "code" in reason ? reason.code : undefined;
+            setOrdersIssue(privateDraft && (code === "PERMISSION_DENIED" || code === "permission-denied") ? new StoreError("TESTER_REQUIRED") : reason);
+            setOrdersReady(true);
+          }
+        }),
       ];
     } catch (reason) {
       if (sameAccount(user.uid, scope)) { setAccountIssue(reason); setOrdersReady(true); }
@@ -276,27 +286,24 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         if (arrived.size === 3) setCatalogueReady(true);
       };
       subscriptions = [
-        onValue(ref(db, "commerce/products/groundnut-oil"), snapshot => {
+        onValue(ref(db, `${commerceRoot}/products/groundnut-oil`), snapshot => {
           if (!active) return;
           try {
-            const product = parseProduct(snapshot.val() ?? undefined);
-            if (backendMode === "firebase" && product?.preview) throw new StoreError("STORE_NOT_READY");
+            const product = assertCurrentStoreRecord(parseProduct(snapshot.val() ?? undefined));
             setProduct(product?.published ? product : null); mark("product");
           } catch (reason) { setProduct(null); mark("product", reason); }
         }, reason => { setProduct(null); mark("product", reason); }),
-        onValue(ref(db, "commerce/variants"), snapshot => {
+        onValue(ref(db, `${commerceRoot}/variants`), snapshot => {
           if (!active) return;
           try {
-            const variants = databaseRecords(snapshot).map(entry => parseVariant(entry.id, entry.data())).sort((a, b) => PACK_IDS.indexOf(a.id) - PACK_IDS.indexOf(b.id));
-            if (backendMode === "firebase" && variants.some(variant => variant.preview)) throw new StoreError("STORE_NOT_READY");
+            const variants = databaseRecords(snapshot).map(entry => assertCurrentStoreRecord(parseVariant(entry.id, entry.data()))).sort((a, b) => PACK_IDS.indexOf(a.id) - PACK_IDS.indexOf(b.id));
             commit(current => ({ ...current, variants })); mark("variants");
           } catch (reason) { commit(current => ({ ...current, variants: [] })); mark("variants", reason); }
         }, reason => { commit(current => ({ ...current, variants: [] })); mark("variants", reason); }),
-        onValue(ref(db, "commerce/publicContent/storefront"), snapshot => {
+        onValue(ref(db, `${commerceRoot}/publicContent/storefront`), snapshot => {
           if (!active) return;
           try {
-            const settings = parseSettings(snapshot.val() ?? undefined);
-            if (backendMode === "firebase" && settings?.preview) throw new StoreError("STORE_NOT_READY");
+            const settings = assertCurrentStoreRecord(parseSettings(snapshot.val() ?? undefined));
             setSettings(settings); mark("settings");
           } catch (reason) { setSettings(null); mark("settings", reason); }
         }, reason => { setSettings(null); mark("settings", reason); }),
@@ -319,9 +326,9 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
             const admin = token.claims.admin === true;
             commit(current => ({ ...current, user: current.user?.uid === user.uid ? { ...current.user, admin } : current.user }));
             ownerSubscription.current?.(); ownerSubscription.current = null; setOwnerOrders([]); setOwnerIssue(undefined); setOwnerOrdersReady(!admin);
-            if (admin) ownerSubscription.current = onValue(query(ref(db, "commerce/orderIndex"), orderByChild("createdAt"), limitToLast(100)), snapshot => {
+            if (admin) ownerSubscription.current = onValue(query(ref(db, `${commerceRoot}/orderIndex`), orderByChild("createdAt"), limitToLast(100)), snapshot => {
               if (!sameAccount(user.uid, scope)) return;
-              try { setOwnerOrders(databaseRecords(snapshot).map(entry => parseOrder(entry.id, entry.data())).filter((order): order is DemoOrder => !!order).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))); setOwnerOrdersReady(true); setOwnerIssue(undefined); }
+              try { setOwnerOrders(databaseRecords(snapshot).map(entry => parseStoreOrder(entry.id, entry.data())).filter((order): order is DemoOrder => !!order).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))); setOwnerOrdersReady(true); setOwnerIssue(undefined); }
               catch (reason) { setOwnerIssue(reason); setOwnerOrdersReady(true); }
             }, reason => { if (sameAccount(user.uid, scope)) { setOwnerIssue(reason); setOwnerOrdersReady(true); } });
             if (switched || !accountReadyRef.current) void loadAccount(user, scope);
@@ -416,14 +423,16 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
     if (showWelcome && !element.open) element.showModal();
     if (!showWelcome && element.open) element.close();
   }, [showWelcome]);
-  const watchOrder = useCallback((id: string, receive: (order: DemoOrder | null) => void, fail: (reason: unknown) => void): Unsubscribe => {
+  const watchOrder = useCallback((id: string, receive: (order: DemoOrder | null) => void, fail: (reason: unknown) => void, owner = false): Unsubscribe => {
     if (backendMode === "demo") { receive(stateRef.current.orders.find(order => order.id === id) ?? null); return () => undefined; }
     const user = authUser.current;
     const scope = generation.current;
     if (!user) { receive(null); return () => undefined; }
-    return onValue(ref(getFirebaseServices().db, `commerce/ordersByUser/${user.uid}/${id}`), snapshot => {
+    if (owner && !stateRef.current.user?.admin) throw new StoreError("ADMIN_REQUIRED");
+    const path = owner ? `${commerceRoot}/orderIndex/${id}` : `${commerceRoot}/ordersByUser/${user.uid}/${id}`;
+    return onValue(ref(getFirebaseServices().db, path), snapshot => {
       if (!sameAccount(user.uid, scope)) return;
-      try { receive(parseOrder(snapshot.key ?? id, snapshot.val() ?? undefined)); } catch (reason) { fail(reason); }
+      try { receive(parseStoreOrder(snapshot.key ?? id, snapshot.val() ?? undefined)); } catch (reason) { fail(reason); }
     }, reason => { if (sameAccount(user.uid, scope)) fail(reason); });
   }, [sameAccount]);
 
@@ -454,7 +463,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         await mutateCart(lines => {
           const variant = stateRef.current.variants.find(variant => variant.id === id);
           const count = (lines.find(line => line.id === id)?.quantity ?? 0) + quantity;
-          if (!variant?.enabled || !Number.isInteger(quantity) || quantity < 1 || count > Math.min(variant.stock, 20)) throw new StoreError("OUT_OF_STOCK");
+          if (!variant?.enabled || (privateDraft && variant.stockConfirmed === false) || !Number.isInteger(quantity) || quantity < 1 || count > Math.min(variant.stock, 20)) throw new StoreError("OUT_OF_STOCK");
           return PACK_IDS.flatMap(pack => pack === id ? [{ id, quantity: count }] : lines.filter(line => line.id === pack));
         });
         notify(t("Added to your cart", "కార్ట్‌లో చేర్చబడింది")); return true;
@@ -477,7 +486,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
       if (backendMode === "demo") {
         const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(email));
         const uid = "demo_" + Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("").slice(0, 24);
-        const displayName = name.trim() || (stateRef.current.user?.uid === uid ? stateRef.current.user.name : t("Preview customer", "ప్రివ్యూ వినియోగదారు"));
+        const displayName = name.trim() || (stateRef.current.user?.uid === uid ? stateRef.current.user.name : t("Customer", "వినియోగదారు"));
         commit(current => ({ ...current, user: { uid, name: displayName, email, phone: "", admin: false }, cart: current.user && current.user.uid !== uid ? [] : current.cart }));
         return;
       }
@@ -555,20 +564,21 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
       }
       requireOnline();
       let data: Record<string, unknown> | undefined;
-      try { data = (await deadline(getServerValue(ref(getFirebaseServices().db, `commerce/deliveryRules/${pin}`)))).val() ?? undefined; }
+      try { data = (await deadline(getServerValue(ref(getFirebaseServices().db, `${commerceRoot}/deliveryRules/${pin}`)))).val() ?? undefined; }
       catch (reason) {
         if (typeof reason === "object" && reason && "code" in reason && reason.code === "permission-denied") throw new StoreError("NOT_SERVICEABLE");
         throw reason;
       }
       if (!data || data.enabled !== true) throw new StoreError("NOT_SERVICEABLE");
-      if (backendMode === "firebase" && data.preview === true) throw new StoreError("STORE_NOT_READY");
+      assertCurrentStoreRecord(data);
       const surcharge = data.extraLitrePaise ?? 0;
       const included = data.includedLitres ?? 0;
       if (typeof data.feePaise !== "number" || !Number.isInteger(data.feePaise) || data.feePaise < 0 || typeof surcharge !== "number" || !Number.isInteger(surcharge) || surcharge < 0 || typeof included !== "number" || !Number.isInteger(included) || included < 0 || typeof data.local !== "boolean" || typeof data.codAllowed !== "boolean" || typeof data.estimate !== "string") throw new StoreError("INVALID_DATA");
       const litres = lines.reduce((sum, line) => sum + (stateRef.current.variants.find(variant => variant.id === line.id)?.litres ?? 0) * line.quantity, 0);
-      return { local: data.local, feePaise: data.feePaise + Math.max(0, litres - included) * surcharge, estimate: data.estimate, codAllowed: data.codAllowed, preview: backendMode === "emulator" };
+      return { local: data.local, feePaise: data.feePaise + Math.max(0, litres - included) * surcharge, estimate: data.estimate, codAllowed: data.codAllowed, preview: backendMode === "emulator" || privateDraft || data.preview === true };
     },
     quoteCheckout: async address => {
+      if (privateDraft) throw new StoreError("STORE_NOT_READY");
       const { user, scope } = assertAccount();
       const valid = validateAddress(address);
       const current = stateRef.current;
@@ -578,7 +588,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         requireOnline();
         const result = await commerceApi("quoteCheckout", { lines: current.cart.map(({ id, quantity }) => ({ id, quantity })), address: valid, channel: "web" });
         if (!sameAccount(user.uid, scope)) throw new StoreError("ACCOUNT_CHANGED");
-        return parseQuote(result.data);
+        return assertCurrentStoreRecord(parseQuote(result.data));
       }
       const delivery = deliveryQuote(valid.pin, current.cart, current.variants);
       if (!delivery) throw new StoreError("NOT_SERVICEABLE");
@@ -593,6 +603,8 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
       return quote;
     },
     placeOrder: async (quote, idempotencyKey) => {
+      if (privateDraft) throw new StoreError("STORE_NOT_READY");
+      assertCurrentStoreRecord(quote);
       if (placingRef.current) throw new StoreError("CHECKOUT_BUSY");
       const { user, scope } = assertAccount();
       if (!/^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey)) throw new StoreError("INVALID_INPUT");

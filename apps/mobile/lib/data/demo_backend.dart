@@ -30,6 +30,8 @@ class DemoCommerceBackend implements CommerceBackend {
   @override
   BackendMode get mode => BackendMode.demo;
   @override
+  bool get privateDraft => false;
+  @override
   CustomerIdentity? get currentUser => _user;
   @override
   Stream<CustomerIdentity?> authChanges() async* {

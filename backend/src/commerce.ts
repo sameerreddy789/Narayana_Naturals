@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
+import { commerceRoot, parseStoreStage, type StoreStage } from './config.js';
 import {
   ApiError, VARIANT_LITRES, assertNoLivePreview, assertTransition, calculateTotals, digest, fail, integer,
-  parsePlaceRequest, parseQuoteRequest, parseStatusRequest, parseVariantRequest, requireAdmin, requireEmail,
+  parsePlaceRequest, parseQuoteRequest, parseStatusRequest, parseVariantRequest, requireAdmin, requireEmail, requireStageAccess,
   type Actor, type Address, type Channel, type DeliveryTerms, type Line, type Order, type PackTerms, type QuoteResponse,
 } from './model.js';
 
@@ -26,14 +27,28 @@ interface Ledger {
   limits?: Record<string, Limit>;
 }
 interface Options {
-  isEmulator: boolean; now?: () => number; maxOrders?: number; maxReceipts?: number; maxBytes?: number;
+  isEmulator: boolean; stage?: StoreStage; now?: () => number; maxOrders?: number; maxReceipts?: number; maxBytes?: number;
 }
 
 // The single commerce transaction makes stock, terms, deduplication and both
 // order views atomic. It is deliberately bounded for the initial small store.
 // Expired unconsumed quotes can be pruned; completed receipts are never evicted.
 export class CommerceService {
-  constructor(private readonly db: Database, private readonly options: Options) {}
+  readonly stage: StoreStage;
+  readonly commerceRoot: 'commerceDraft' | 'commerce';
+  constructor(private readonly db: Database, private readonly options: Options) {
+    this.stage = parseStoreStage(options.stage);
+    this.commerceRoot = commerceRoot(this.stage);
+  }
+  private assertPreview(markers: unknown[]): boolean {
+    return assertNoLivePreview(this.options.isEmulator, markers, this.stage);
+  }
+  private async completedOrder(orderId: string, uid: string): Promise<{ orderId: string }> {
+    const order = (await this.db.ref(`${this.commerceRoot}/orderIndex/${orderId}`).get()).val() as Order | null;
+    if (!order || order.uid !== uid) fail('STORE_NOT_READY', 'The saved order records need review.');
+    this.assertPreview([order.preview]);
+    return { orderId };
+  }
   private now(): number { return this.options.now?.() ?? Date.now(); }
   private prune(ledger: Ledger): void {
     const now = this.now();
@@ -65,7 +80,7 @@ export class CommerceService {
     limits[key] = { startedAt: sameWindow ? previous.startedAt : now, count: count + 1 };
   }
   private async transaction<T>(change: (ledger: Ledger) => T): Promise<T> {
-    const reference = this.db.ref('commerce');
+    const reference = this.db.ref(this.commerceRoot);
     // Keep a value listener until commit so the initial callback has the
     // current server value, rather than rejecting a guessed empty cache.
     const listener = () => {};
@@ -122,8 +137,9 @@ export class CommerceService {
     });
     const delivery: DeliveryTerms = { feePaise: rule.feePaise, extraLitrePaise, includedLitres,
       codAllowed: rule.codAllowed, estimate: rule.estimate, local: rule.local, preview: rule.preview === true };
-    const marked = assertNoLivePreview(this.options.isEmulator, [store.preview, product.preview, delivery.preview, ...packs.map(pack => pack.preview)]);
-    const preview = this.options.isEmulator || marked;
+    const marked = this.assertPreview([store.preview, store.stage === 'private-draft', store.testOnly, product.preview,
+      delivery.preview, ...packs.map(pack => pack.preview)]);
+    const preview = this.options.isEmulator || this.stage === 'private-draft' || marked;
     const totals = calculateTotals(lines, packs, delivery);
     const termsHash = digest({ product: 'groundnut-oil', preview, delivery,
       packs: packs.map(({ id, litres, pricePaise, preview }) => ({ id, litres, pricePaise, preview })) });
@@ -131,6 +147,7 @@ export class CommerceService {
   }
   async quoteCheckout(actor: Actor | undefined, raw: unknown): Promise<QuoteResponse> {
     const customer = requireEmail(actor);
+    requireStageAccess(customer, this.stage);
     const request = parseQuoteRequest(raw);
     const quoteId = randomUUID();
     return this.transaction(ledger => {
@@ -150,12 +167,13 @@ export class CommerceService {
   }
   async placeCodOrder(actor: Actor | undefined, raw: unknown): Promise<{ orderId: string }> {
     const customer = requireEmail(actor);
+    requireStageAccess(customer, this.stage);
     const request = parsePlaceRequest(raw);
     const hash = digest([customer.uid, request.idempotencyKey]);
-    const completed = (await this.db.ref(`commerce/idempotency/${hash}`).get()).val() as Receipt | null;
+    const completed = (await this.db.ref(`${this.commerceRoot}/idempotency/${hash}`).get()).val() as Receipt | null;
     if (completed) {
       if (completed.quoteId !== request.quoteId) fail('IDEMPOTENCY_CONFLICT', 'This retry key belongs to a different quote.', 'already-exists');
-      return { orderId: completed.orderId };
+      return this.completedOrder(completed.orderId, customer.uid);
     }
     const orderId = randomUUID();
     return this.transaction(ledger => {
@@ -163,12 +181,19 @@ export class CommerceService {
       const previous = receipts[hash];
       if (previous) {
         if (previous.quoteId !== request.quoteId) fail('IDEMPOTENCY_CONFLICT', 'This retry key belongs to a different quote.', 'already-exists');
+        const existing = ledger.orderIndex?.[previous.orderId];
+        if (!existing || existing.uid !== customer.uid) fail('STORE_NOT_READY', 'The saved order records need review.');
+        this.assertPreview([existing.preview]);
         return { orderId: previous.orderId };
       }
       const quote = ledger.quotes?.[request.quoteId];
       if (!quote) fail('QUOTE_NOT_FOUND', 'This checkout quote is missing or expired.', 'not-found');
       if (quote.uid !== customer.uid) fail('QUOTE_OWNER_MISMATCH', 'This checkout belongs to another account.', 'permission-denied');
+      this.assertPreview([quote.preview]);
       if (quote.consumedOrderId) {
+        const existing = ledger.orderIndex?.[quote.consumedOrderId];
+        if (!existing || existing.uid !== customer.uid) fail('STORE_NOT_READY', 'The saved order records need review.');
+        this.assertPreview([existing.preview]);
         receipts[hash] = { uid: customer.uid, quoteId: quote.quoteId, orderId: quote.consumedOrderId, createdAt: this.now() };
         return { orderId: quote.consumedOrderId };
       }
@@ -193,12 +218,14 @@ export class CommerceService {
   }
   async updateVariant(actor: Actor | undefined, raw: unknown): Promise<{ id: string }> {
     const owner = requireAdmin(actor);
+    requireStageAccess(owner, this.stage);
     const request = parseVariantRequest(raw);
     return this.transaction(ledger => {
       this.rate(ledger, owner.uid, 'owner');
       const product = ledger.products?.['groundnut-oil'];
       if (!product) fail('STORE_NOT_READY', 'Create the product configuration first.');
       const previous = ledger.variants?.[request.id];
+      this.assertPreview([product.preview, previous?.preview]);
       (ledger.variants ??= {})[request.id] = { ...previous, ...request, litres: VARIANT_LITRES[request.id],
         preview: product.preview === true || previous?.preview === true };
       return { id: request.id };
@@ -206,10 +233,12 @@ export class CommerceService {
   }
   async updateOrderStatus(actor: Actor | undefined, raw: unknown): Promise<{ orderId: string; status: string }> {
     const owner = requireAdmin(actor);
+    requireStageAccess(owner, this.stage);
     const request = parseStatusRequest(raw);
     return this.transaction(ledger => {
       const order = ledger.orderIndex?.[request.orderId];
       if (!order) fail('ORDER_NOT_FOUND', 'This order is missing.', 'not-found');
+      this.assertPreview([order.preview]);
       assertTransition(order.status, request.status);
       if (order.status === request.status) return request;
       this.rate(ledger, owner.uid, 'owner');

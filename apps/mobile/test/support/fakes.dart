@@ -122,3 +122,32 @@ class FailingLiveBackend extends TestingBackend {
   Stream<Catalogue> catalogueChanges() =>
       Stream<Catalogue>.error(const AppFailure('unavailable'));
 }
+
+class PrivateDraftTestingBackend extends TestingBackend {
+  PrivateDraftTestingBackend(super.store);
+  @override
+  BackendMode get mode => BackendMode.firebase;
+  @override
+  bool get privateDraft => true;
+  @override
+  Stream<Catalogue> catalogueChanges() => super.catalogueChanges().map(
+    (value) => Catalogue(
+      product: value.product,
+      variants: value.variants
+          .map(
+            (variant) => Variant(
+              id: variant.id,
+              litres: variant.litres,
+              pricePaise: variant.pricePaise,
+              stock: 0,
+              enabled: true,
+              stockConfirmed: false,
+            ),
+          )
+          .toList(),
+      // An accidentally enabled remote setting must still not open ordering
+      // in the private demonstration build.
+      settings: const StoreSettings(orderingEnabled: true, preview: true),
+    ),
+  );
+}

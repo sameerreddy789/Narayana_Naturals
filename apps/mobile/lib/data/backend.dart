@@ -3,6 +3,7 @@ import '../domain/models.dart';
 
 abstract class CommerceBackend {
   BackendMode get mode;
+  bool get privateDraft => false;
   CustomerIdentity? get currentUser;
   Stream<CustomerIdentity?> authChanges();
   Stream<Catalogue> catalogueChanges();

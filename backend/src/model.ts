@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { StoreStage } from './config.js';
 
 export const VARIANT_LITRES = { '1l': 1, '2l': 2, '5l': 5 } as const;
 export type VariantId = keyof typeof VARIANT_LITRES;
@@ -19,7 +20,7 @@ export interface Order {
   paymentMethod: 'cod'; paymentStatus: 'pending_collection' | 'collected' | 'cancelled';
   status: OrderStatus; channel: Channel; preview: boolean; updatedAt?: number;
 }
-export type MachineCode = 'AUTH_REQUIRED' | 'EMAIL_REQUIRED' | 'ADMIN_REQUIRED' | 'INVALID_INPUT'
+export type MachineCode = 'AUTH_REQUIRED' | 'EMAIL_REQUIRED' | 'ADMIN_REQUIRED' | 'TESTER_REQUIRED' | 'INVALID_INPUT'
   | 'STORE_NOT_READY' | 'NOT_SERVICEABLE' | 'OUT_OF_STOCK' | 'QUOTE_EXPIRED' | 'QUOTE_CHANGED'
   | 'QUOTE_NOT_FOUND' | 'QUOTE_OWNER_MISMATCH' | 'COD_UNAVAILABLE' | 'IDEMPOTENCY_CONFLICT'
   | 'ORDER_NOT_FOUND' | 'INVALID_TRANSITION' | 'RATE_LIMITED' | 'STORE_CAPACITY'
@@ -59,6 +60,13 @@ export function requireEmail(actor: Actor | undefined): Actor & { email: string 
 export function requireAdmin(actor: Actor | undefined): Actor {
   const signedIn = requireActor(actor);
   if (signedIn.token.admin !== true) fail('ADMIN_REQUIRED', 'Owner access is required.', 'permission-denied');
+  return signedIn;
+}
+export function requireStageAccess(actor: Actor | undefined, stage: StoreStage): Actor {
+  const signedIn = requireActor(actor);
+  if (stage === 'private-draft' && signedIn.token.tester !== true && signedIn.token.admin !== true) {
+    fail('TESTER_REQUIRED', 'This private test is available only to approved testers and the owner.', 'permission-denied');
+  }
   return signedIn;
 }
 export function record(value: unknown): Record<string, unknown> {
@@ -176,9 +184,9 @@ export function calculateTotals(lines: Line[], packs: PackTerms[], delivery: Del
   }
   return { lines: orderLines, subtotalPaise, shippingPaise, totalPaise };
 }
-export function assertNoLivePreview(isEmulator: boolean, markers: unknown[]): boolean {
-  if (!isEmulator && markers.some(marker => marker === true)) {
-    fail('STORE_NOT_READY', 'Preview data cannot accept live orders.');
+export function assertNoLivePreview(isEmulator: boolean, markers: unknown[], stage: StoreStage = 'production'): boolean {
+  if (!isEmulator && stage !== 'private-draft' && markers.some(marker => marker === true)) {
+    fail('STORE_NOT_READY', 'Private test data cannot accept production orders.');
   }
   return markers.some(marker => marker === true);
 }

@@ -7,7 +7,8 @@ import { ArrowRight, Check, HelpCircle, Menu, ShoppingBag, UserRound, X } from "
 import { BrandLogo } from "./brand-logo";
 import { guidePageKey, usePreview } from "./preview-provider";
 import { languageText } from "@/lib/commerce";
-import { ConnectionBanner } from "./data-status";
+import { privateDraft } from "@/lib/firebase";
+import { ConnectionBanner, PrivateDraftBanner } from "./data-status";
 import { CartPage, CheckoutPage, HomePage, ProductPage, ShopPage } from "./shopping-pages";
 import { AccountPage, AddressesPage, OrderDetailPage, OrdersPage, SignInPage } from "./account-pages";
 import { InfoPage } from "./info-pages";
@@ -35,7 +36,7 @@ function GuideTip() {
   if (!ready || !accountReady || !uid || !state.welcomeSeen.includes(uid)) return null;
   const dismissed = state.dismissedTips[uid] ?? [];
   if (dismissed.includes("__skipped__") || dismissed.includes(guidePageKey(pathname))) return null;
-  const guide = pageGuides[pathname] ?? (pathname.startsWith("/policies/") ? ["Read this policy draft. Final business details and policies will be added before the store launches.", "ఈ పాలసీ డ్రాఫ్ట్ చదవండి. స్టోర్ ప్రారంభానికి ముందు తుది వివరాలు చేర్చబడతాయి."] : pathname.startsWith("/order-result/") || pathname.startsWith("/account/orders/") ? ["See your order, payment type and delivery status. You can return to all orders from this page.", "ఆర్డర్, చెల్లింపు రకం మరియు డెలివరీ స్థితి చూడండి. ఇక్కడి నుంచి అన్ని ఆర్డర్లకు వెళ్లవచ్చు."] : null);
+  const guide = privateDraft && pathname === "/checkout" ? ["This private demonstration does not accept orders. Return to the packs or manage your saved address from Account.", "ఈ ప్రైవేట్ ప్రదర్శనలో ఆర్డర్లు తీసుకోబడవు. ప్యాక్‌లు చూడండి లేదా ఖాతాలో సేవ్ చేసిన చిరునామాను నిర్వహించండి."] : pageGuides[pathname] ?? (pathname.startsWith("/policies/") ? ["Read this policy draft. Final business details and policies will be added before the store launches.", "ఈ పాలసీ డ్రాఫ్ట్ చదవండి. స్టోర్ ప్రారంభానికి ముందు తుది వివరాలు చేర్చబడతాయి."] : pathname.startsWith("/order-result/") || pathname.startsWith("/account/orders/") ? ["See your order, payment type and delivery status. You can return to all orders from this page.", "ఆర్డర్, చెల్లింపు రకం మరియు డెలివరీ స్థితి చూడండి. ఇక్కడి నుంచి అన్ని ఆర్డర్లకు వెళ్లవచ్చు."] : null);
   if (!guide) return null;
   return <aside className="page-width guide-tip" aria-label={t("Page guide", "పేజీ గైడ్")}><HelpCircle size={21} aria-hidden="true" /><p>{t(guide[0], guide[1])}</p><div><button disabled={guideBusy} onClick={() => void dismissTip(pathname)} className="text-button">{t("Got it", "అర్థమైంది")}<Check size={15} /></button><button disabled={guideBusy} onClick={() => void skipGuide()} className="text-button subtle">{t("Hide guide", "గైడ్ దాచండి")}</button></div></aside>;
 }
@@ -48,7 +49,8 @@ function Header() {
   useEffect(() => setOpen(false), [pathname]);
   const links = [["/shop", "Shop oil", "నూనె కొనండి"], ["/our-ghani", "Our Ghani", "మా ఘానీ"], ["/delivery", "Delivery", "డెలివరీ"], ["/faq", "Help", "సహాయం"]];
   return <>
-    <div className="demo-banner">{mode === "demo" ? t("Local preview · Sample prices and delivery fees · Demo orders only", "స్థానిక ప్రివ్యూ · నమూనా ధరలు మరియు డెలివరీ ఛార్జీలు · డెమో ఆర్డర్లు మాత్రమే") : mode === "emulator" ? t("Shared local preview · Sample catalogue & COD orders · No real delivery", "స్థానిక ప్రివ్యూ · నమూనా కేటలాగ్ మరియు నగదు ఆర్డర్లు · అసలు డెలివరీ లేదు") : settings?.notice ? languageText(settings.notice, state.language) : settings?.orderingEnabled ? t("Ghani groundnut oil · Cash on delivery for eligible PIN codes", "ఘానీ వేరుశెనగ నూనె · అర్హమైన పిన్‌లకు నగదు చెల్లింపు") : t("Ordering is currently unavailable", "ప్రస్తుతం ఆర్డర్లు అందుబాటులో లేవు")}</div>
+    <PrivateDraftBanner />
+    {!privateDraft && <div className="demo-banner">{mode === "demo" ? t("Local preview · Sample prices and delivery fees · Demo orders only", "స్థానిక ప్రివ్యూ · నమూనా ధరలు మరియు డెలివరీ ఛార్జీలు · డెమో ఆర్డర్లు మాత్రమే") : mode === "emulator" ? t("Shared local preview · Sample catalogue & COD orders · No real delivery", "స్థానిక ప్రివ్యూ · నమూనా కేటలాగ్ మరియు నగదు ఆర్డర్లు · అసలు డెలివరీ లేదు") : settings?.notice ? languageText(settings.notice, state.language) : settings?.orderingEnabled ? t("Ghani groundnut oil · Cash on delivery for eligible PIN codes", "ఘానీ వేరుశెనగ నూనె · అర్హమైన పిన్‌లకు నగదు చెల్లింపు") : t("Ordering is currently unavailable", "ప్రస్తుతం ఆర్డర్లు అందుబాటులో లేవు")}</div>}
     <header className="site-header"><div className="header-inner page-width">
       <Link className="wordmark" href="/" aria-label="Narayana Naturals home"><BrandLogo decorative /></Link>
       <nav className="desktop-nav" aria-label={t("Main navigation", "ప్రధాన నావిగేషన్")}>{links.map(([href, en, te]) => <Link className={pathname === href ? "active" : ""} key={href} href={href}>{t(en, te)}</Link>)}</nav>

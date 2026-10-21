@@ -7,10 +7,16 @@ import '../domain/failure.dart';
 import '../domain/models.dart';
 
 class LocalStore {
-  const LocalStore(this.preferences, this.mode);
+  const LocalStore(
+    this.preferences,
+    this.mode, {
+    this.storeStage = 'production',
+  });
   final SharedPreferences preferences;
   final BackendMode mode;
-  String key(String suffix) => 'narayana_${mode.name}_v1_$suffix';
+  final String storeStage;
+  String key(String suffix) =>
+      'narayana_${mode.name}_${storeStage == 'private-draft' ? 'draft_' : ''}v1_$suffix';
   Object? read(String suffix) {
     final value = preferences.getString(key(suffix));
     if (value == null) return null;

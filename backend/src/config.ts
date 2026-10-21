@@ -1,6 +1,18 @@
 export const DEMO_PROJECT = 'demo-narayana-naturals';
 export const LIVE_PROJECT = 'narayananaturals-6b5aa';
 export const DEMO_DATABASE_URL = 'https://demo-narayana-naturals-default-rtdb.firebaseio.com';
+export const LIVE_DATABASE_URL = `https://${LIVE_PROJECT}-default-rtdb.firebaseio.com`;
+export type StoreStage = 'private-draft' | 'production';
+export function parseStoreStage(value: unknown = 'production'): StoreStage {
+  if (value !== 'private-draft' && value !== 'production') throw new Error('STORE_STAGE must be private-draft or production.');
+  return value;
+}
+export function commerceRoot(stage: StoreStage): 'commerceDraft' | 'commerce' {
+  return stage === 'private-draft' ? 'commerceDraft' : 'commerce';
+}
+export function hasEmulatorHosts(env: NodeJS.ProcessEnv): boolean {
+  return Object.entries(env).some(([key, value]) => Boolean(value) && /(?:_EMULATOR_HOST|_EMULATOR_HUB)$/.test(key));
+}
 export function loopbackHost(value: string | undefined): boolean {
   if (!value || value.includes('://')) return false;
   try {
@@ -19,6 +31,7 @@ export function requireDemoEmulators(env: NodeJS.ProcessEnv = process.env): stri
 }
 export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   const mode = env.BACKEND_MODE ?? 'emulator';
+  const stage = parseStoreStage(env.STORE_STAGE);
   if (!['emulator', 'firebase'].includes(mode)) throw new Error('BACKEND_MODE must be emulator or firebase.');
   const isEmulator = mode === 'emulator';
   if (isEmulator) {
@@ -26,12 +39,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     env.FIREBASE_AUTH_EMULATOR_HOST ??= '127.0.0.1:9099';
     env.FIREBASE_DATABASE_EMULATOR_HOST ??= '127.0.0.1:9000';
     requireDemoEmulators(env);
-  } else if (env.FIREBASE_AUTH_EMULATOR_HOST || env.FIREBASE_DATABASE_EMULATOR_HOST || env.GCLOUD_PROJECT !== LIVE_PROJECT) {
+  } else if (hasEmulatorHosts(env) || env.GCLOUD_PROJECT !== LIVE_PROJECT) {
     throw new Error('Live mode requires the owner project and no emulator variables.');
   }
   const projectId = isEmulator ? DEMO_PROJECT : LIVE_PROJECT;
   const databaseURL = isEmulator ? DEMO_DATABASE_URL : env.DATABASE_URL;
-  if (!databaseURL || (!isEmulator && databaseURL !== `https://${LIVE_PROJECT}-default-rtdb.firebaseio.com`)) {
+  if (!databaseURL || (!isEmulator && databaseURL !== LIVE_DATABASE_URL)) {
     throw new Error('Set DATABASE_URL to the owner Realtime Database URL.');
   }
   const port = Number(env.PORT ?? 5002);
@@ -42,8 +55,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   const origins = (env.ALLOWED_ORIGINS ?? (isEmulator ? 'http://localhost:3000,http://127.0.0.1:3000' : ''))
     .split(',').map(value => value.trim()).filter(Boolean);
   if (!origins.length || origins.some(origin => {
-    try { const url = new URL(origin); return url.origin !== origin || (!isEmulator && url.protocol !== 'https:'); }
+    try {
+      const url = new URL(origin);
+      const privateLoopback = stage === 'private-draft' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+        && url.protocol === 'http:';
+      return url.origin !== origin || (!isEmulator && url.protocol !== 'https:' && !privateLoopback);
+    }
     catch { return true; }
-  })) throw new Error('ALLOWED_ORIGINS must contain explicit valid origins; live origins must use HTTPS.');
-  return { mode, isEmulator, projectId, databaseURL, port, host, origins };
+  })) throw new Error('ALLOWED_ORIGINS must contain explicit valid origins; live origins must use HTTPS except explicit private-draft loopback development.');
+  return { mode, stage, commerceRoot: commerceRoot(stage), isEmulator, projectId, databaseURL, port, host, origins };
 }

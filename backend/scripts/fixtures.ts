@@ -32,8 +32,8 @@ export function previewCommerce() {
       '5l': { id: '5l', litres: 5, pricePaise: 225000, stock: 4, enabled: true, preview: true },
     },
     deliveryRules: Object.fromEntries([
-      ...['523201', '517001', '517501'].map(pin => [pin, { ...local }]),
-      ...['500001', '110001', '560001', '600001'].map(pin => [pin, { ...national }]),
+      ...['523201', '517001', '517501'].map(pin => [pin, { ...local }] as const),
+      ...['500001', '110001', '560001', '600001'].map(pin => [pin, { ...national }] as const),
     ]),
   };
 }

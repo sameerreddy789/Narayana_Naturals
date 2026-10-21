@@ -38,11 +38,37 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('tab_2')));
     await tester.pumpAndSettle();
     await tapVisible(tester, find.byKey(const ValueKey('cart_checkout')));
-    expect(find.text('Continue in preview'), findsOneWidget);
+    expect(find.text('Sign in & continue'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const ValueKey('sign_in_email')))
+          .controller!
+          .text,
+      isEmpty,
+    );
+    expect(find.text('Fill sample credentials'), findsNothing);
+    await tester.enterText(
+      find.byKey(const ValueKey('sign_in_email')),
+      customerEmail,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('sign_in_password')),
+      previewPassword,
+    );
     await tapVisible(tester, find.byKey(const ValueKey('sign_in_continue')));
     expect(find.text('Welcome to Narayana Naturals'), findsOneWidget);
     await tapVisible(tester, find.byKey(const ValueKey('welcome_skip')));
-    await tapVisible(tester, find.byKey(const ValueKey('preview_address')));
+    expect(find.byKey(const ValueKey('preview_address')), findsNothing);
+    for (final entry in {
+      'address_name': delivery.name,
+      'address_phone': delivery.phone,
+      'address_street': delivery.street,
+      'address_city': delivery.city,
+      'address_pin': delivery.pin,
+    }.entries) {
+      await tester.ensureVisible(find.byKey(ValueKey(entry.key)));
+      await tester.enterText(find.byKey(ValueKey(entry.key)), entry.value);
+    }
     await tapVisible(tester, find.byKey(const ValueKey('address_review')));
     expect(
       find.text('Your complete total'),
@@ -122,4 +148,46 @@ void main() {
     expect(controller.catalogue, isNull);
     expect(backend.attempted, isEmpty);
   });
+  testWidgets(
+    'Firebase private draft labels example prices and pending stock',
+    (tester) async {
+      phoneViewport(tester);
+      final fixture = await MobileFixture.create(signedIn: false);
+      fixture.controller.dispose();
+      final backend = PrivateDraftTestingBackend(fixture.store);
+      final controller = AppController(backend, fixture.store);
+      addTearDown(controller.dispose);
+      await controller.start();
+      await until(() => controller.catalogue != null);
+      await tester.pumpWidget(NarayanaApp(controller: controller));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Private demo · Example prices · Orders disabled'),
+        findsOneWidget,
+      );
+      await tapVisible(tester, find.byKey(const ValueKey('home_shop')));
+      expect(find.text('Example price · ₹450'), findsOneWidget);
+      expect(find.text('Example price · ₹900'), findsOneWidget);
+      expect(find.text('Example price · ₹2,250'), findsOneWidget);
+      expect(find.text('Stock pending'), findsNWidgets(3));
+      expect(controller.orderingAvailable, isFalse);
+      for (final id in ['1l', '2l', '5l']) {
+        expect(
+          tester
+              .widget<FilledButton>(find.byKey(ValueKey('add_$id')))
+              .onPressed,
+          isNull,
+        );
+      }
+      await controller.setLanguage('te');
+      await tester.pumpAndSettle();
+      expect(find.text('స్టాక్ నిర్ధారించాలి'), findsNWidgets(3));
+      expect(
+        find.text('ప్రైవేట్ డెమో · నమూనా ధరలు · ఆర్డర్లు నిలిపివేయబడ్డాయి'),
+        findsOneWidget,
+      );
+      expect(backend.attempted, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

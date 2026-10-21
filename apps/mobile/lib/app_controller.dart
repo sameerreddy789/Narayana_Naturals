@@ -40,7 +40,15 @@ class AppController extends ChangeNotifier {
   Future<void> _cartWrites = Future<void>.value();
   Future<void> _guideWrites = Future<void>.value();
 
-  bool get preview => backend.mode != BackendMode.firebase;
+  bool get privateDraft => backend.privateDraft;
+  bool get preview => backend.mode != BackendMode.firebase || privateDraft;
+  bool get acceptsPreviewTerms =>
+      backend.mode == BackendMode.demo || privateDraft;
+  bool get orderingAvailable =>
+      !privateDraft &&
+      catalogue?.published == true &&
+      catalogue!.settings.orderingEnabled &&
+      (acceptsPreviewTerms || !catalogue!.settings.preview);
   bool get signedIn => user != null;
   bool get canEditCart =>
       (!signedIn || accountReady) && pending?.orderId == null;
@@ -211,7 +219,9 @@ class AppController extends ChangeNotifier {
     }
     address = value.address;
     if (_guidePendingWrites == 0) guide = value.guide;
-    orders = List.of(value.orders);
+    orders = value.orders
+        .where((order) => acceptsPreviewTerms || !order.preview)
+        .toList();
     accountError = null;
   }
 
@@ -503,9 +513,7 @@ class AppController extends ChangeNotifier {
       await syncCart();
       if (cartDirty) throw const AppFailure('CART_SYNC');
     }
-    if (catalogue?.published != true ||
-        catalogue?.settings.orderingEnabled != true ||
-        (backend.mode == BackendMode.firebase && catalogue!.settings.preview)) {
+    if (!orderingAvailable) {
       throw const AppFailure('STORE_NOT_READY');
     }
     final generation = _generation;
@@ -517,7 +525,7 @@ class AppController extends ChangeNotifier {
       if (!_owns(identity.uid, generation)) {
         throw const AppFailure('AUTH_REQUIRED');
       }
-      if ((quote.preview && backend.mode == BackendMode.firebase) ||
+      if ((quote.preview && !acceptsPreviewTerms) ||
           quote.quoteId.length < 8 ||
           quote.lines.length != requested.length ||
           !requested.every(
@@ -566,6 +574,7 @@ class AppController extends ChangeNotifier {
       await finishCompletedCheckout();
       return value.orderId!;
     }
+    if (privateDraft) throw const AppFailure('STORE_NOT_READY');
     final generation = _generation;
     checkoutBusy = true;
     _notify();
@@ -688,11 +697,20 @@ class AppController extends ChangeNotifier {
     final identity = user;
     if (identity == null) throw const AppFailure('AUTH_REQUIRED');
     for (final order in orders) {
-      if (order.id == id) return order;
+      if (order.id == id) {
+        if (order.preview && !acceptsPreviewTerms) {
+          throw const AppFailure('STORE_NOT_READY');
+        }
+        return order;
+      }
     }
-    return backend
+    final order = await backend
         .loadOrder(identity.uid, id)
         .timeout(const Duration(seconds: 20));
+    if (order.preview && !acceptsPreviewTerms) {
+      throw const AppFailure('STORE_NOT_READY');
+    }
+    return order;
   }
 
   Future<void> signOut() => backend.signOut();

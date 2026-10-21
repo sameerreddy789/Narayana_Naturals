@@ -96,7 +96,12 @@ class CartPage extends StatelessWidget {
           if (app.catalogue == null) const CatalogueStatus(),
           for (final line in app.cart) _CartRow(line: line),
           TotalRow(
-            context.tr('Estimated product total', 'ఉత్పత్తుల అంచనా మొత్తం'),
+            app.privateDraft
+                ? context.tr('Example product total', 'నమూనా ఉత్పత్తుల మొత్తం')
+                : context.tr(
+                    'Estimated product total',
+                    'ఉత్పత్తుల అంచనా మొత్తం',
+                  ),
             money(app.estimatedSubtotal),
             strong: true,
           ),
@@ -130,7 +135,8 @@ class CartPage extends StatelessWidget {
               app.signedIn ? 'డెలివరీ, మొత్తం' : 'సైన్ ఇన్ చేసి ఆర్డర్ చేయండి',
             ),
             onPressed:
-                (!app.signedIn || app.accountReady) &&
+                app.orderingAvailable &&
+                    (!app.signedIn || app.accountReady) &&
                     app.pending?.orderId == null
                 ? onCheckout
                 : null,
@@ -182,17 +188,22 @@ class _CartRow extends StatelessWidget {
                     Text(
                       variant == null
                           ? context.tr('Price is loading', 'ధర లోడ్ అవుతోంది')
-                          : '${money(variant.pricePaise)} × ${line.quantity}',
+                          : '${app.privateDraft ? '${context.tr('Example price', 'నమూనా ధర')} · ' : ''}${money(variant.pricePaise)} × ${line.quantity}',
                     ),
                     if (variant != null &&
                         (!variant.available ||
                             line.quantity > variant.stock)) ...[
                       const SizedBox(height: 8),
                       Text(
-                        context.tr(
-                          'Update quantity: this pack is unavailable or stock is lower.',
-                          'సంఖ్య మార్చండి: ప్యాక్ అందుబాటులో లేదు లేదా స్టాక్ తక్కువగా ఉంది.',
-                        ),
+                        app.privateDraft && !variant.stockConfirmed
+                            ? context.tr(
+                                'Stock pending',
+                                'స్టాక్ నిర్ధారించాలి',
+                              )
+                            : context.tr(
+                                'Update quantity: this pack is unavailable or stock is lower.',
+                                'సంఖ్య మార్చండి: ప్యాక్ అందుబాటులో లేదు లేదా స్టాక్ తక్కువగా ఉంది.',
+                              ),
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.error,
                         ),

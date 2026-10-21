@@ -4,13 +4,15 @@ import type { AddressInfo } from 'node:net';
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
+import type { AppCheck } from 'firebase-admin/app-check';
 import { getDatabase, type Database } from 'firebase-admin/database';
 import { CommerceService } from '../src/commerce.js';
 import { DEMO_DATABASE_URL } from '../src/config.js';
 import { createCommerceServer } from '../src/http.js';
 import { ApiError, digest, type Actor, type MachineCode, type Order, type QuoteResponse } from '../src/model.js';
 import { DEMO_PROJECT, PREVIEW_ADDRESS, PREVIEW_PASSWORD, PREVIEW_USERS,
-  requireDemoEmulators, seedPreviewAuth, seedPreviewDatabase } from '../scripts/fixtures.js';
+  previewCommerce, requireDemoEmulators, seedPreviewAuth, seedPreviewDatabase } from '../scripts/fixtures.js';
+import { initializePrivateDraft, privateDraftCommerce } from '../scripts/private-draft.js';
 
 let app: App;
 let peerApp: App;
@@ -25,10 +27,12 @@ let now: number;
 let customerToken: string;
 let otherToken: string;
 let ownerToken: string;
+let testerToken: string;
 let anonymousToken: string;
 let customer: Actor;
 let other: Actor;
 let owner: Actor;
+let tester: Actor;
 const CLOCK_START = Date.parse('2026-10-20T10:00:00.000Z');
 const request = (channel: 'web' | 'android' = 'web', quantity = 1) => ({
   lines: [{ id: '1l', quantity }], address: { ...PREVIEW_ADDRESS }, channel,
@@ -53,9 +57,10 @@ async function actorFor(token: string): Promise<Actor> {
   return { uid: decoded.uid, token: decoded as unknown as Record<string, unknown> };
 }
 type Method = 'quoteCheckout' | 'placeCodOrder' | 'updateVariant' | 'updateOrderStatus';
-async function api<T>(method: Method, data: unknown, token?: string): Promise<T> {
+async function api<T>(method: Method, data: unknown, token?: string, appCheckToken?: string): Promise<T> {
   const response = await fetch(`${baseUrl}/v1/${method}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}) },
     body: JSON.stringify({ data }),
   });
   const body = await response.json() as { data?: T; error?: { code: string; message: string } };
@@ -89,6 +94,43 @@ async function place(quantity = 1, idempotencyKey = 'stable-order-key-001') {
 async function orderCount(expected: number) {
   assert.equal(Object.keys((await value('commerce/orderIndex')) ?? {}).length, expected);
 }
+function productionCommerce() {
+  const data = previewCommerce();
+  data.publicContent.storefront.preview = false;
+  data.products['groundnut-oil'].preview = false;
+  for (const variant of Object.values(data.variants)) variant.preview = false;
+  return { ...data, deliveryRules: Object.fromEntries(Object.entries(data.deliveryRules).map(([pin, rule]) => [pin, { ...rule, preview: false }])) };
+}
+// Order-flow fixtures are confined to the isolated test emulator. The live
+// initializer is deliberately disabled and is tested separately below.
+async function enablePrivateOrderingFixture() {
+  requireIsolatedTestEmulators();
+  const preview = previewCommerce();
+  await db.ref('commerceDraft').update({
+    'publicContent/storefront/orderingEnabled': true,
+    variants: preview.variants,
+    deliveryRules: Object.fromEntries(Object.entries(preview.deliveryRules).map(([pin, rule]) => [pin,
+      { ...rule, estimate: 'Private test: no fulfilment' }])),
+  });
+}
+async function initializeOrderablePrivateFixture() {
+  await initializePrivateDraft(db);
+  await enablePrivateOrderingFixture();
+}
+async function startServer(nextService: CommerceService, isEmulator = true, appCheck?: AppCheck) {
+  if (server?.listening) {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+  server = createCommerceServer({ service: nextService, auth, appCheck, isEmulator, origins: ['http://localhost:3000'], projectId: DEMO_PROJECT,
+    health: async () => {
+      const snapshot = await db.ref(`${nextService.commerceRoot}/publicContent/storefront`).get();
+      return { configured: snapshot.exists(), orderingEnabled: snapshot.child('orderingEnabled').val() === true,
+        onlinePaymentsEnabled: snapshot.child('onlinePaymentsEnabled').val() === true };
+    } });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
 
 before(async () => {
   requireIsolatedTestEmulators();
@@ -106,6 +148,10 @@ before(async () => {
   assert.equal(customer.token.email, PREVIEW_USERS.customer.email);
   assert.equal((customer.token.firebase as { sign_in_provider: string }).sign_in_provider, 'password');
   assert.equal(owner.token.admin, true);
+  await auth.setCustomUserClaims(customer.uid, { tester: true });
+  testerToken = await signIn(PREVIEW_USERS.customer.email);
+  tester = await actorFor(testerToken);
+  assert.equal(tester.token.tester, true);
 });
 after(async () => {
   if (peerApp) await deleteApp(peerApp);
@@ -117,10 +163,7 @@ beforeEach(async () => {
   now = CLOCK_START;
   service = new CommerceService(db, { isEmulator: true, now: () => now });
   peerService = new CommerceService(peerDb, { isEmulator: true, now: () => now });
-  server = createCommerceServer({ service, auth, isEmulator: true, origins: ['http://localhost:3000'], projectId: DEMO_PROJECT,
-    health: async () => (await db.ref('commerce/publicContent/storefront').get()).exists() });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  await startServer(service);
 });
 afterEach(async () => {
   if (server?.listening) {
@@ -191,8 +234,8 @@ describe('HTTP API with real email-password Auth emulator tokens', () => {
   test('health, allowed-origin preflight and denied origins retain the HTTP contract', async () => {
     const health = await fetch(`${baseUrl}/health`);
     assert.equal(health.status, 200);
-    assert.deepEqual(await health.json(), { status: 'ok', mode: 'emulator', projectId: DEMO_PROJECT,
-      database: 'realtime', authentication: 'email_password', checkout: 'cod' });
+    assert.deepEqual(await health.json(), { status: 'ok', mode: 'emulator', stage: 'production', projectId: DEMO_PROJECT,
+      database: 'realtime', authentication: 'email_password', checkout: 'cod', onlinePaymentsEnabled: false });
     const preflight = await fetch(`${baseUrl}/v1/quoteCheckout`, { method: 'OPTIONS', headers: { Origin: 'http://localhost:3000' } });
     assert.equal(preflight.status, 204);
     assert.equal(preflight.headers.get('access-control-allow-origin'), 'http://localhost:3000');
@@ -443,5 +486,162 @@ describe('bounded ledger capacity and receipt retention', () => {
     assert.deepEqual(await peerService.placeCodOrder(customer, { quoteId: consumed.quoteId, idempotencyKey: 'retained-new-retry-key' }), first);
     await stock(11);
     await orderCount(1);
+  });
+});
+
+describe('private draft stage isolation and live verification policy', () => {
+  test('the client demonstration rejects checkout even for approved testers and preserves both ledgers', async () => {
+    await initializePrivateDraft(db);
+    const production = await value('commerce');
+    const baseline = await value('commerceDraft');
+    const draft = new CommerceService(db, { isEmulator: false, stage: 'private-draft', now: () => now });
+    await rejectsCode(() => draft.quoteCheckout(tester, { ...request(), address: { ...PREVIEW_ADDRESS, pin: '517502' } }), 'STORE_NOT_READY');
+    await rejectsCode(() => draft.quoteCheckout(owner, request()), 'STORE_NOT_READY');
+    assert.deepEqual(await value('commerceDraft'), baseline);
+    assert.deepEqual(await value('commerce'), production);
+    assert.equal(await value('commerceDraft/orderIndex'), null);
+    assert.equal(await value('commerceDraft/quotes'), null);
+  });
+  test('private samples allow only approved testers and all commerce writes stay in commerceDraft', async () => {
+    const production = await value('commerce');
+    assert.equal(await initializePrivateDraft(db), true);
+    await enablePrivateOrderingFixture();
+    const draft = new CommerceService(db, { isEmulator: false, stage: 'private-draft', now: () => now });
+    assert.equal(draft.commerceRoot, 'commerceDraft');
+    assert.equal(service.stage, 'production');
+    assert.equal(service.commerceRoot, 'commerce');
+    await rejectsCode(() => draft.quoteCheckout(customer, request()), 'TESTER_REQUIRED', 403);
+    await rejectsCode(() => draft.quoteCheckout({ ...customer, token: { ...customer.token, tester: 'true' } }, request()), 'TESTER_REQUIRED', 403);
+    const quote = await draft.quoteCheckout(tester, request('android', 2));
+    assert.equal(quote.preview, true);
+    assert.equal(quote.estimate, 'Private test: no fulfilment');
+    await rejectsCode(() => draft.placeCodOrder(customer, { quoteId: quote.quoteId, idempotencyKey: 'unapproved-draft-key' }), 'TESTER_REQUIRED', 403);
+    await rejectsCode(() => draft.updateVariant(tester, { id: '1l', pricePaise: 45000, stock: 12, enabled: true }), 'ADMIN_REQUIRED', 403);
+    const { orderId } = await draft.placeCodOrder(tester, { quoteId: quote.quoteId, idempotencyKey: 'private-draft-order-key' });
+    const original = await value(`commerceDraft/orderIndex/${orderId}`) as Order;
+    assert.equal(original.preview, true);
+    assert.equal(original.uid, tester.uid);
+    assert.equal(original.createdAt, now);
+    assert.deepEqual(await value(`commerceDraft/ordersByUser/${tester.uid}/${orderId}`), original);
+    assert.equal(await value('commerceDraft/variants/1l/stock'), 10);
+    await draft.updateVariant(owner, { id: '1l', pricePaise: 47000, stock: 10, enabled: true });
+    now += 1000;
+    await draft.updateOrderStatus(owner, { orderId, status: 'packed' });
+    await draft.updateOrderStatus(owner, { orderId, status: 'cancelled' });
+    assert.equal(await value('commerceDraft/variants/1l/stock'), 12);
+    const cancelled = await value(`commerceDraft/orderIndex/${orderId}`) as Order;
+    assert.equal(cancelled.preview, true);
+    assert.equal(cancelled.status, 'cancelled');
+    assert.equal(cancelled.paymentStatus, 'cancelled');
+    assert.deepEqual(await value(`commerceDraft/ordersByUser/${tester.uid}/${orderId}`), cancelled);
+    assert.deepEqual(await value('commerce'), production);
+  });
+  test('every live private mutation still requires verified Auth and App Check before tester or owner access', async () => {
+    await initializeOrderablePrivateFixture();
+    const draft = new CommerceService(db, { isEmulator: false, stage: 'private-draft', now: () => now });
+    const appCheck = { verifyToken: async (token: string) => {
+      if (token !== 'verified-test-appcheck') throw new Error('Invalid test App Check token');
+      return {};
+    } } as unknown as AppCheck;
+    await startServer(draft, false, appCheck);
+    const endpoints = [
+      ['quoteCheckout', request(), testerToken],
+      ['placeCodOrder', { quoteId: 'missing-quote-123', idempotencyKey: 'missing-retry-key' }, testerToken],
+      ['updateVariant', { id: '1l', pricePaise: 45000, stock: 12, enabled: true }, ownerToken],
+      ['updateOrderStatus', { orderId: 'missing-order-123', status: 'packed' }, ownerToken],
+    ] as const;
+    for (const [method, data, token] of endpoints) {
+      await rejectsCode(() => api(method, data, undefined, 'verified-test-appcheck'), 'AUTH_REQUIRED', 401);
+      await rejectsCode(() => api(method, data, token), 'APP_CHECK_REQUIRED', 401);
+      await rejectsCode(() => api(method, data, token, 'invalid-test-appcheck'), 'APP_CHECK_REQUIRED', 401);
+    }
+    await rejectsCode(() => api('quoteCheckout', request(), customerToken, 'verified-test-appcheck'), 'TESTER_REQUIRED', 403);
+    await rejectsCode(() => api('quoteCheckout', { ...request(), tester: true }, customerToken, 'verified-test-appcheck'), 'TESTER_REQUIRED', 403);
+    await rejectsCode(() => api('updateVariant', { id: '1l', pricePaise: 45000, stock: 12, enabled: true }, testerToken, 'verified-test-appcheck'), 'ADMIN_REQUIRED', 403);
+    const quote = await api<QuoteResponse>('quoteCheckout', request(), testerToken, 'verified-test-appcheck');
+    assert.equal(quote.preview, true);
+    const placed = await api<{ orderId: string }>('placeCodOrder', { quoteId: quote.quoteId, idempotencyKey: 'verified-private-key' }, testerToken, 'verified-test-appcheck');
+    await api('updateOrderStatus', { orderId: placed.orderId, status: 'packed' }, ownerToken, 'verified-test-appcheck');
+    await api('updateVariant', { id: '2l', pricePaise: 90000, stock: 8, enabled: true }, ownerToken, 'verified-test-appcheck');
+    assert.equal(await value(`commerceDraft/orderIndex/${placed.orderId}/status`), 'packed');
+    assert.equal(await value(`commerce/orderIndex/${placed.orderId}`), null);
+  });
+  test('production never falls back to draft terms, quotes, orders or retry receipts', async () => {
+    await initializeOrderablePrivateFixture();
+    await db.ref('commerce').set(productionCommerce());
+    const production = new CommerceService(db, { isEmulator: false, now: () => now });
+    const draft = new CommerceService(peerDb, { isEmulator: false, stage: 'private-draft', now: () => now });
+    const sharedKey = 'same-key-separate-stage';
+    const draftQuote = await draft.quoteCheckout(tester, request());
+    const draftOrder = await draft.placeCodOrder(tester, { quoteId: draftQuote.quoteId, idempotencyKey: sharedKey });
+    await rejectsCode(() => production.placeCodOrder(customer, { quoteId: draftQuote.quoteId, idempotencyKey: sharedKey }), 'QUOTE_NOT_FOUND');
+    await rejectsCode(() => production.updateOrderStatus(owner, { orderId: draftOrder.orderId, status: 'packed' }), 'ORDER_NOT_FOUND');
+    const productionQuote = await production.quoteCheckout(customer, request());
+    assert.equal(productionQuote.preview, false);
+    const productionOrder = await production.placeCodOrder(customer, { quoteId: productionQuote.quoteId, idempotencyKey: sharedKey });
+    assert.notEqual(productionOrder.orderId, draftOrder.orderId);
+    assert.equal((await orderCopies(productionOrder.orderId)).preview, false);
+    assert.deepEqual(await production.placeCodOrder(customer, { quoteId: productionQuote.quoteId, idempotencyKey: sharedKey }), productionOrder);
+    assert.deepEqual(await draft.placeCodOrder(tester, { quoteId: draftQuote.quoteId, idempotencyKey: sharedKey }), draftOrder);
+    await rejectsCode(() => draft.updateOrderStatus(owner, { orderId: productionOrder.orderId, status: 'packed' }), 'ORDER_NOT_FOUND');
+    await stock(11);
+    assert.equal(await value('commerceDraft/variants/1l/stock'), 11);
+    await db.ref('commerce').remove();
+    await rejectsCode(() => production.quoteCheckout(customer, request()), 'STORE_NOT_READY');
+    assert.equal(await value('commerce'), null, 'Missing production terms must not initialize or copy the draft ledger');
+  });
+  test('production rejects copied private samples, preview quote retries and preview order status updates', async () => {
+    await initializeOrderablePrivateFixture();
+    const draft = new CommerceService(db, { isEmulator: false, stage: 'private-draft', now: () => now });
+    const quote = await draft.quoteCheckout(tester, request());
+    const raw = { quoteId: quote.quoteId, idempotencyKey: 'copied-draft-receipt-key' };
+    const order = await draft.placeCodOrder(tester, raw);
+    await db.ref('commerce').set(await value('commerceDraft'));
+    const production = new CommerceService(peerDb, { isEmulator: false, now: () => now });
+    const baseline = await value('commerce');
+    await rejectsCode(() => production.quoteCheckout(customer, request()), 'STORE_NOT_READY');
+    await rejectsCode(() => production.placeCodOrder(customer, raw), 'STORE_NOT_READY');
+    await rejectsCode(() => production.placeCodOrder(customer, { quoteId: quote.quoteId, idempotencyKey: 'copied-draft-new-key' }), 'STORE_NOT_READY');
+    await rejectsCode(() => production.updateOrderStatus(owner, { orderId: order.orderId, status: 'packed' }), 'STORE_NOT_READY');
+    await rejectsCode(() => production.updateVariant(owner, { id: '1l', pricePaise: 45000, stock: 11, enabled: true }), 'STORE_NOT_READY');
+    assert.deepEqual(await value('commerce'), baseline);
+    await db.ref('commerce').set({ ...productionCommerce(), publicContent: privateDraftCommerce().publicContent });
+    await db.ref('commerce/publicContent/storefront/preview').set(false);
+    await rejectsCode(() => production.quoteCheckout(customer, request()), 'STORE_NOT_READY', 409);
+  });
+  test('initialization is atomic, seeds only an absent draft, and preserves existing orders and personal data', async () => {
+    const production = await value('commerce');
+    const users = await value('users');
+    const results = await Promise.all([initializePrivateDraft(db), initializePrivateDraft(peerDb)]);
+    assert.deepEqual(results.sort(), [false, true]);
+    assert.deepEqual(await value('commerceDraft'), privateDraftCommerce());
+    await enablePrivateOrderingFixture();
+    const draft = new CommerceService(db, { isEmulator: false, stage: 'private-draft', now: () => now });
+    const quote = await draft.quoteCheckout(tester, request());
+    await draft.placeCodOrder(tester, { quoteId: quote.quoteId, idempotencyKey: 'seed-preserved-order-key' });
+    const existing = await value('commerceDraft');
+    assert.equal(await initializePrivateDraft(peerDb), false);
+    assert.deepEqual(await value('commerceDraft'), existing);
+    assert.deepEqual(await value('commerce'), production);
+    assert.deepEqual(await value('users'), users);
+  });
+  test('health reports its stage and checks the storefront under that stage only', async () => {
+    const draft = new CommerceService(db, { isEmulator: false, stage: 'private-draft', now: () => now });
+    await startServer(draft, false);
+    let health = await fetch(`${baseUrl}/health`);
+    assert.equal(health.status, 503);
+    assert.equal(((await health.json()) as { stage: string }).stage, 'private-draft');
+    await initializePrivateDraft(db);
+    await db.ref('commerce').remove();
+    health = await fetch(`${baseUrl}/health`);
+    assert.equal(health.status, 200);
+    const draftHealth = await health.json() as { stage: string; checkout: string; onlinePaymentsEnabled: boolean };
+    assert.equal(draftHealth.stage, 'private-draft');
+    assert.equal(draftHealth.checkout, 'disabled');
+    assert.equal(draftHealth.onlinePaymentsEnabled, false);
+    await startServer(new CommerceService(db, { isEmulator: false, now: () => now }), false);
+    health = await fetch(`${baseUrl}/health`);
+    assert.equal(health.status, 503);
+    assert.equal(((await health.json()) as { stage: string }).stage, 'production');
   });
 });

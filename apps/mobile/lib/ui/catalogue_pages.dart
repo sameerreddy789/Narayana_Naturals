@@ -228,12 +228,16 @@ class _PackRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      money(variant.pricePaise),
+                      app.preview
+                          ? '${context.tr('Example price', 'నమూనా ధర')} · ${money(variant.pricePaise)}'
+                          : money(variant.pricePaise),
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      variant.available
+                      app.privateDraft && !variant.stockConfirmed
+                          ? context.tr('Stock pending', 'స్టాక్ నిర్ధారించాలి')
+                          : variant.available
                           ? context.tr('Available', 'అందుబాటులో ఉంది')
                           : context.tr('Unavailable', 'అందుబాటులో లేదు'),
                       style: TextStyle(
@@ -358,12 +362,16 @@ class _ProductPageState extends State<ProductPage> {
               ),
               const SizedBox(height: 24),
               TotalRow(
-                context.tr('Price per pack', 'ఒక ప్యాక్ ధర'),
+                app.preview
+                    ? context.tr('Example price', 'నమూనా ధర')
+                    : context.tr('Price per pack', 'ఒక ప్యాక్ ధర'),
                 money(variant.pricePaise),
                 strong: true,
               ),
               Text(
-                variant.available
+                app.privateDraft && !variant.stockConfirmed
+                    ? context.tr('Stock pending', 'స్టాక్ నిర్ధారించాలి')
+                    : variant.available
                     ? context.tr(
                         'Available · Delivery checked at checkout',
                         'అందుబాటులో ఉంది · చెక్అవుట్‌లో డెలివరీ తనిఖీ',

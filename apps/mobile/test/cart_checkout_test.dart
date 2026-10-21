@@ -10,13 +10,69 @@ import 'support/fakes.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test('normal APK configuration is Firebase, never a preview fallback', () {
-    expect(AppConfig.fromEnvironment().mode, BackendMode.firebase);
+    final config = AppConfig.fromEnvironment();
+    expect(config.mode, BackendMode.firebase);
+    expect(config.storeStage, 'production');
+    expect(config.commerceRoot, 'commerce');
+    expect(config.appCheck, 'playIntegrity');
+    expect(config.preview, isFalse);
+    expect(AppConfig.internalBuild, isFalse);
     expect(AppConfig.androidOptions.projectId, 'narayananaturals-6b5aa');
     expect(
       AppConfig.androidOptions.appId,
       '1:255355716241:android:516c520663c796acdd3530',
     );
   });
+  test('debug App Check requires an explicit internal private draft', () {
+    const draft = AppConfig(
+      BackendMode.firebase,
+      storeStage: 'private-draft',
+      appCheck: 'debug',
+      commerceApiUrl: 'https://narayana-naturals-api.onrender.com',
+    );
+    expect(draft.commerceRoot, 'commerceDraft');
+    expect(draft.preview, isTrue);
+    expect(draft.apiUri.host, 'narayana-naturals-api.onrender.com');
+    expect(() => draft.validate(internal: true), returnsNormally);
+    expect(() => draft.validate(internal: false), throwsA(isA<AppFailure>()));
+    expect(
+      () => const AppConfig(
+        BackendMode.firebase,
+        appCheck: 'debug',
+      ).validate(internal: true),
+      throwsA(isA<AppFailure>()),
+    );
+    expect(
+      () => const AppConfig(
+        BackendMode.firebase,
+        storeStage: 'private-draft',
+        appCheck: 'off',
+      ).validate(internal: true),
+      throwsA(isA<AppFailure>()),
+    );
+    expect(
+      () => const AppConfig(
+        BackendMode.firebase,
+        storeStage: 'staging',
+      ).validate(internal: true),
+      throwsA(isA<AppFailure>()),
+    );
+  });
+  test(
+    'unconfirmed stock cannot become purchasable through a stock update',
+    () {
+      final variant = Variant.fromJson('1l', {
+        'litres': 1,
+        'pricePaise': 45000,
+        'stock': 0,
+        'stockConfirmed': false,
+        'enabled': true,
+      });
+      expect(variant.available, isFalse);
+      expect(variant.withStock(10).available, isFalse);
+      expect(variant.withStock(10).quantityLimit, 0);
+    },
+  );
   test(
     'guest merge is idempotent and combines pack sizes without doubling',
     () {

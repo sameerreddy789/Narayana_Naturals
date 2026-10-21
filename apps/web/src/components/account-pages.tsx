@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, CheckCircle2, ClipboardList, Eye, EyeOff, HelpCircle, LogOut, MapPin, Package, RotateCcw, UserRound } from "lucide-react";
 import { money, type Address, type DemoOrder } from "@/lib/demo";
+import { privateDraft } from "@/lib/firebase";
 import { usePreview } from "./preview-provider";
 import { EmptyState, PageHeading } from "./storefront";
 import { AddressFields } from "./shopping-pages";
@@ -65,8 +66,6 @@ export function SignInPage() {
       <button type="button" disabled={busy} aria-pressed={!createAccount} onClick={() => changeForm(false)}>{t("Sign in", "సైన్ ఇన్")}</button>
       <button type="button" disabled={busy} aria-pressed={createAccount} onClick={() => changeForm(true)}>{t("Create account", "ఖాతా సృష్టించండి")}</button>
     </div>}
-    {mode !== "firebase" && !reset && <><p className="small-note">{t("Local preview only. These sample credentials do not access a live customer account.", "స్థానిక ప్రివ్యూ మాత్రమే. ఈ నమూనా వివరాలు నిజమైన కస్టమర్ ఖాతాను తెరవవు.")}</p>
-      <button type="button" disabled={busy} className="text-button" onClick={() => { setName("Preview customer"); setEmail("customer@narayana.test"); setPassword("NarayanaDemo123!"); setCreateAccount(false); setError(""); setNotice(""); }}>{t("Fill sample details", "నమూనా వివరాలు నింపండి")}</button></>}
     {createAccount && !reset && <label>{t("Your name", "మీ పేరు")}<input required minLength={2} maxLength={100} disabled={busy} autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder={t("Enter your name", "మీ పేరు నమోదు చేయండి")} /></label>}
     <label>{t("Email address", "ఇమెయిల్ చిరునామా")}<input required disabled={busy} type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} maxLength={254} value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" /></label>
     {!reset && <label>{t("Password", "పాస్‌వర్డ్")}<div className="password-field">
@@ -89,7 +88,7 @@ export function AccountPage() {
   const [error, setError] = useState("");
   const router = useRouter();
   if (!ready || (state.user && !accountReady)) return <section className="page-width standard-page"><DataStatus error={accountError} loading={t("Loading your account…", "మీ ఖాతా లోడ్ అవుతోంది…")} />{ready && state.user && accountError && <button className="button secondary" disabled={busy} onClick={() => void leave()}>{t("Sign out", "సైన్ అవుట్")}<LogOut size={18} /></button>}{error && <p className="error-text" role="alert">{error}</p>}</section>;
-  if (!state.user) return <section className="page-width standard-page"><EmptyState title={t("Your account, your orders", "మీ ఖాతా, మీ ఆర్డర్లు")} description={mode === "demo" ? t("Sign in to a demo account to explore orders and the welcome guide.", "ఆర్డర్లు మరియు స్వాగత గైడ్ కోసం డెమో ఖాతాలో సైన్ ఇన్ చేయండి.") : t("Sign in with your email to find your saved address and orders.", "సేవ్ చేసిన చిరునామా మరియు ఆర్డర్ల కోసం మీ ఈమెయిల్‌తో సైన్ ఇన్ చేయండి.")} action={mode === "demo" ? t("Try demo sign-in", "డెమో సైన్ ఇన్ ప్రయత్నించండి") : t("Sign in", "సైన్ ఇన్")} href="/sign-in" /></section>;
+  if (!state.user) return <section className="page-width standard-page"><EmptyState title={t("Your account, your orders", "మీ ఖాతా, మీ ఆర్డర్లు")} description={t("Sign in with your email to find your saved address and orders.", "సేవ్ చేసిన చిరునామా మరియు ఆర్డర్ల కోసం మీ ఇమెయిల్‌తో సైన్ ఇన్ చేయండి.")} action={t("Sign in", "సైన్ ఇన్")} href="/sign-in" /></section>;
   async function leave() {
     setBusy(true); setError("");
     try { await logout(); router.push("/"); }
@@ -102,10 +101,10 @@ export function AccountPage() {
       <button onClick={() => void toggleLanguage()}><span className="language-icon" aria-hidden="true">అ</span><span><strong>{t("Language", "భాష")}</strong><small>{state.language === "en" ? "English → తెలుగు" : "తెలుగు → English"}</small></span><ArrowRight size={18} /></button>
       <button disabled={guideBusy} onClick={() => void replayGuide()}><HelpCircle size={23} /><span><strong>{guideBusy ? t("Saving guide…", "గైడ్ సేవ్ అవుతోంది…") : t("Replay guide", "గైడ్ మళ్లీ చూడండి")}</strong><small>{t("A quick introduction to each page", "ప్రతి పేజీకి చిన్న పరిచయం")}</small></span><RotateCcw size={18} /></button>
       {state.user.admin && mode !== "demo" && <Link href="/admin"><Package size={23} /><span><strong>{t("Owner dashboard", "యజమాని డాష్‌బోర్డ్")}</strong><small>{t("Manage catalogue and orders", "కేటలాగ్ మరియు ఆర్డర్లు నిర్వహించండి")}</small></span><ArrowRight size={18} /></Link>}
-      <button disabled={busy} onClick={() => void leave()}><LogOut size={23} /><span><strong>{busy ? t("Signing out…", "సైన్ అవుట్ అవుతోంది…") : t("Sign out", "సైన్ అవుట్")}</strong><small>{mode === "demo" ? t("Leave this demo account", "ఈ డెమో ఖాతా నుంచి బయటకు వెళ్లండి") : t("Leave this account on this device", "ఈ పరికరంలో ఈ ఖాతా నుంచి బయటకు వెళ్లండి")}</small></span><ArrowRight size={18} /></button>
+      <button disabled={busy} onClick={() => void leave()}><LogOut size={23} /><span><strong>{busy ? t("Signing out…", "సైన్ అవుట్ అవుతోంది…") : t("Sign out", "సైన్ అవుట్")}</strong><small>{t("Leave this account on this device", "ఈ పరికరంలో ఈ ఖాతా నుంచి బయటకు వెళ్లండి")}</small></span><ArrowRight size={18} /></button>
       {error && <p className="error-text" role="alert">{error}</p>}
-    </div><aside className="account-profile"><UserRound size={28} strokeWidth={1.4} /><h2>{state.user.name}</h2><p className="account-email">{state.user.email || (state.user.phone ? "+91 " + state.user.phone : "")}</p><span className="status-badge">{mode === "demo" ? t("Demo account", "డెమో ఖాతా") : t("Email account", "ఇమెయిల్ ఖాతా")}</span>
-      <p className="small-note">{mode === "demo" ? t("This preview remembers your sample details in this browser.", "ఈ ప్రివ్యూ మీ నమూనా వివరాలను ఈ బ్రౌజర్‌లో గుర్తుంచుకుంటుంది.") : t("Your cart, address and guide progress are saved to your account. Sign in with the same email address on another device.", "మీ కార్ట్, చిరునామా మరియు గైడ్ ఖాతాలో సేవ్ అవుతాయి. మరో పరికరంలో అదే ఇమెయిల్ చిరునామాతో సైన్ ఇన్ చేయండి.")}</p>
+    </div><aside className="account-profile"><UserRound size={28} strokeWidth={1.4} /><h2>{state.user.name}</h2><p className="account-email">{state.user.email || (state.user.phone ? "+91 " + state.user.phone : "")}</p><span className="status-badge">{t("Email account", "ఇమెయిల్ ఖాతా")}</span>
+      <p className="small-note">{t("Your cart, address and guide progress are saved to your account. Sign in with the same email address on another device.", "మీ కార్ట్, చిరునామా మరియు గైడ్ ఖాతాలో సేవ్ అవుతాయి. మరో పరికరంలో అదే ఇమెయిల్ చిరునామాతో సైన్ ఇన్ చేయండి.")}</p>
     </aside></div>
   </section>;
 }
@@ -136,7 +135,7 @@ export function AddressesPage() {
     catch (reason) { setError(explainError(reason)); }
     finally { busyRef.current = false; setBusy(false); }
   }
-  return <section className="page-width standard-page narrow-page"><PageHeading title={t("Your delivery address", "మీ డెలివరీ చిరునామా")} description={mode === "demo" ? t("Keep a sample address ready for the next order.", "తదుపరి ఆర్డర్ కోసం నమూనా చిరునామా సేవ్ చేయండి.") : t("Save your default address for your next checkout.", "తదుపరి చెక్అవుట్ కోసం మీ సాధారణ చిరునామా సేవ్ చేయండి.")} />
+  return <section className="page-width standard-page narrow-page"><PageHeading title={t("Your delivery address", "మీ డెలివరీ చిరునామా")} description={t("Save your default delivery address to your account.", "మీ సాధారణ డెలివరీ చిరునామాను ఖాతాలో సేవ్ చేయండి.")} />
     {!ready || (state.user && !accountReady) ? <DataStatus error={accountError} loading={t("Loading your address…", "మీ చిరునామా లోడ్ అవుతోంది…")} /> : !state.user ? <Link href="/sign-in?returnTo=/account/addresses" className="button primary">{t("Sign in", "సైన్ ఇన్")}</Link> : <form className="address-form" onSubmit={event => void save(event)} aria-busy={busy}>
       {accountError && <DataStatus error={accountError} />}
       <fieldset disabled={busy}><AddressFields address={address} onChange={next => { setAddress(next); setSaved(false); setDirty(true); setError(""); }} /></fieldset>
@@ -152,8 +151,8 @@ export function OrdersPage() {
   const { state, mode, ready, accountReady, ordersReady, accountError, ordersError, t } = usePreview();
   const orders = state.orders.filter(order => order.uid === state.user?.uid);
   return <section className="page-width standard-page"><PageHeading title={t("Your orders", "మీ ఆర్డర్లు")} description={t("See what is on its way, or choose a familiar pack again.", "మీ ఆర్డర్ స్థితి చూడండి లేదా మళ్లీ ప్యాక్ ఎంచుకోండి.")} />
-    {!ready || (state.user && (!accountReady || !ordersReady)) ? <DataStatus error={accountError || ordersError} loading={t("Loading your orders…", "మీ ఆర్డర్లు లోడ్ అవుతున్నాయి…")} /> : !state.user ? <EmptyState title={t("Find your orders", "మీ ఆర్డర్లు చూడండి")} description={mode === "demo" ? t("Sign in to your demo account to see its orders.", "ఆర్డర్లు చూడడానికి మీ డెమో ఖాతాలో సైన్ ఇన్ చేయండి.") : t("Sign in with the mobile number used to place your order.", "ఆర్డర్ చేసిన మొబైల్ నంబర్‌తో సైన్ ఇన్ చేయండి.")} action={t("Sign in", "సైన్ ఇన్")} href="/sign-in?returnTo=/account/orders" />
-      : ordersError ? <DataStatus error={ordersError} /> : !orders.length ? <EmptyState title={t("Your first order starts here", "మీ మొదటి ఆర్డర్ ఇక్కడ మొదలవుతుంది")} description={mode === "demo" ? t("Choose an oil pack and try preview checkout. Your demo order will appear here.", "నూనె ప్యాక్ ఎంచుకుని ప్రివ్యూ చెక్అవుట్ ప్రయత్నించండి. డెమో ఆర్డర్ ఇక్కడ కనిపిస్తుంది.") : t("Choose an oil pack and review checkout. Your confirmed order will appear here.", "నూనె ప్యాక్ ఎంచుకుని చెక్అవుట్ చూడండి. నిర్ధారించిన ఆర్డర్ ఇక్కడ కనిపిస్తుంది.")} action={t("Shop oil", "నూనె కొనండి")} />
+    {!ready || (state.user && (!accountReady || !ordersReady)) ? <DataStatus error={accountError || ordersError} loading={t("Loading your orders…", "మీ ఆర్డర్లు లోడ్ అవుతున్నాయి…")} /> : !state.user ? <EmptyState title={t("Find your orders", "మీ ఆర్డర్లు చూడండి")} description={t("Sign in with the email address used to place your order.", "ఆర్డర్ చేసిన ఇమెయిల్ చిరునామాతో సైన్ ఇన్ చేయండి.")} action={t("Sign in", "సైన్ ఇన్")} href="/sign-in?returnTo=/account/orders" />
+      : ordersError ? <DataStatus error={ordersError} /> : !orders.length ? <EmptyState title={privateDraft ? t("No test orders", "పరీక్ష ఆర్డర్లు లేవు") : t("Your first order starts here", "మీ మొదటి ఆర్డర్ ఇక్కడ మొదలవుతుంది")} description={privateDraft ? t("This private demonstration does not accept orders. You can view the example packs and manage your account.", "ఈ ప్రైవేట్ ప్రదర్శనలో ఆర్డర్లు తీసుకోబడవు. నమూనా ప్యాక్‌లు చూడవచ్చు, మీ ఖాతాను నిర్వహించవచ్చు.") : t("Choose an oil pack and review checkout. Your confirmed order will appear here.", "నూనె ప్యాక్ ఎంచుకుని చెక్అవుట్ చూడండి. నిర్ధారించిన ఆర్డర్ ఇక్కడ కనిపిస్తుంది.")} action={t("View oil packs", "నూనె ప్యాక్‌లు చూడండి")} />
         : <><div className="order-list">{orders.map(order => <Link href={"/account/orders/" + order.id} key={order.id} className="order-list-item"><div className="order-list-symbol"><Package size={25} strokeWidth={1.5} /></div>
           <div><h2>{order.lines.map(line => line.litres + " L × " + line.quantity).join(" · ")}</h2><p>{new Intl.DateTimeFormat(state.language === "te" ? "te-IN" : "en-IN", { dateStyle: "medium", timeZone: "Asia/Kolkata" }).format(new Date(order.createdAt))} · {order.preview ? mode === "demo" ? t("Demo order", "డెమో ఆర్డర్") : t("Preview order", "ప్రివ్యూ ఆర్డర్") : t("Cash on delivery", "డెలివరీ సమయంలో నగదు")}</p></div>
           <div className="order-list-end"><strong>{money(order.totalPaise)}</strong><span className="status-badge">{statusLabel(order.status, t)}</span></div><ArrowRight size={20} />
@@ -177,7 +176,7 @@ export function useOrderRecord(id: string | undefined, owner = false) {
     if (!id || !ready || !accountReady || !uid || (owner && !admin) || mode === "demo") { setLoading(false); return; }
     setLoading(true);
     try {
-      return watchOrder(id, order => { setRemote(order); setLoading(false); }, reason => { setError(explainError(reason)); setLoading(false); });
+      return watchOrder(id, order => { setRemote(order); setLoading(false); }, reason => { setError(explainError(reason)); setLoading(false); }, owner);
     } catch (reason) { setError(explainError(reason)); setLoading(false); }
   }, [id, uid, admin, owner, ready, accountReady, mode, watchOrder, explainError]);
   const order = (owner ? ownerOrders : state.orders).find(order => order.id === id && (owner || order.uid === uid)) ?? (remote && (owner || remote.uid === uid) ? remote : null);
@@ -191,7 +190,7 @@ export function OrderDetailPage({ id, result = false }: { id: string; result?: b
   const router = useRouter();
   if (!ready || (state.user && !accountReady) || (loading && !order)) return <section className="page-width standard-page"><DataStatus error={accountError} loading={t("Loading your order…", "మీ ఆర్డర్ లోడ్ అవుతోంది…")} /></section>;
   if (error) return <section className="page-width standard-page"><DataStatus error={error} /></section>;
-  if (!order) return <section className="page-width standard-page"><EmptyState title={t("This order is not available", "ఈ ఆర్డర్ అందుబాటులో లేదు")} description={t("Sign in with the mobile number that placed it, or return to your orders.", "ఈ ఆర్డర్ చేసిన మొబైల్ నంబర్‌తో సైన్ ఇన్ చేయండి లేదా మీ ఆర్డర్లకు తిరిగి వెళ్లండి.")} action={t("Your orders", "మీ ఆర్డర్లు")} href="/account/orders" /></section>;
+  if (!order) return <section className="page-width standard-page"><EmptyState title={t("This order is not available", "ఈ ఆర్డర్ అందుబాటులో లేదు")} description={t("Sign in with the email address that placed it, or return to your orders.", "ఈ ఆర్డర్ చేసిన ఇమెయిల్ చిరునామాతో సైన్ ఇన్ చేయండి లేదా మీ ఆర్డర్లకు తిరిగి వెళ్లండి.")} action={t("Your orders", "మీ ఆర్డర్లు")} href="/account/orders" /></section>;
   const statuses: DemoOrder["status"][] = ["received", "packed", "shipped", "delivered"];
   const index = statuses.indexOf(order.status);
   async function orderAgain() {

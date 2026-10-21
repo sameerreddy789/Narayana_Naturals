@@ -27,7 +27,11 @@ class _AppBootstrapState extends State<AppBootstrap> {
   Future<AppController> initialize() async {
     final config = AppConfig.fromEnvironment();
     final preferences = await SharedPreferences.getInstance();
-    final store = LocalStore(preferences, config.mode);
+    final store = LocalStore(
+      preferences,
+      config.mode,
+      storeStage: config.storeStage,
+    );
     final backend = config.mode == BackendMode.demo
         ? DemoCommerceBackend(store)
         : FirebaseCommerceBackend(await config.initializeFirebase(), config);

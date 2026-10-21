@@ -33,3 +33,8 @@ artifacts/
 
 # Keep the canonical Android configuration under apps/mobile/android/app.
 /google-services*.json
+
+# Firebase Admin private keys must stay outside the repository.
+*firebase-adminsdk*.json
+firebase-admin*.json
+service-account*.json

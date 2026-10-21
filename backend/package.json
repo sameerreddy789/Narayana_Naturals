@@ -10,7 +10,9 @@
     "start": "node lib/src/index.js",
     "test": "npm run build && node --test lib/test/unit.test.js",
     "test:integration": "npm run build && node --test --test-concurrency=1 lib/test/rules.test.js lib/test/integration.test.js",
-    "seed:emulator": "npm run build && node lib/scripts/seed-emulator.js"
+    "seed:emulator": "npm run build && node lib/scripts/seed-emulator.js",
+    "seed:private-draft": "npm run build && node --env-file-if-exists=.env lib/scripts/seed-private-draft.js",
+    "access:owner": "npm run build && node --env-file-if-exists=.env lib/scripts/owner-access.js"
   },
   "dependencies": {
     "firebase-admin": "^14.5.0"

@@ -6,7 +6,13 @@ groundnut oil. Customers use the same email account, catalogue, cart, default
 delivery address and order history on both connected clients. The web owner
 dashboard updates pack prices, available stock and order status.
 
-The implemented purchase flow is **cash on delivery for eligible PIN codes**.
+The current **private client draft** uses the hosted website at
+https://narayana-naturals.onrender.com and API at
+https://narayana-naturals-api.onrender.com. It shows labelled example prices,
+pending stock and only PIN **517502**, with COD, payments and order submission
+disabled. See [the APK sharing and live setup guide](docs/LIVE-DRAFT-APK.md).
+
+The production purchase implementation supports **cash on delivery for eligible PIN codes**.
 The user's selected stack avoids Firebase billing: email/password Authentication,
 Realtime Database and a separately hosted Node API. Firestore, SMS login and
 Cloud Functions are not used. Hosting the Node API and monitoring free quotas

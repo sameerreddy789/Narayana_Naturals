@@ -63,7 +63,8 @@ export function removePurchasedLines(saved: CartLine[], purchased: CartLine[]): 
 
 export function parseVariant(id: string, data: unknown): Variant {
   if (!object(data) || !isPackId(id) || data.id !== id || data.litres !== PACK_LITRES[id] || !integer(data.pricePaise, 100, 1_000_000) || !integer(data.stock, 0, 100_000_000) || typeof data.enabled !== "boolean") throw new StoreError("INVALID_DATA");
-  return { id, litres: PACK_LITRES[id], pricePaise: data.pricePaise, stock: data.stock, enabled: data.enabled, preview: data.preview === true };
+  if (data.stockConfirmed !== undefined && typeof data.stockConfirmed !== "boolean") throw new StoreError("INVALID_DATA");
+  return { id, litres: PACK_LITRES[id], pricePaise: data.pricePaise, stock: data.stock, enabled: data.enabled, preview: data.preview === true, ...(typeof data.stockConfirmed === "boolean" ? { stockConfirmed: data.stockConfirmed } : {}) };
 }
 export function parseProduct(data: unknown): Product | null {
   if (data === undefined || data === null) return null;
@@ -109,7 +110,7 @@ export function errorCode(error: unknown): string {
   if (error instanceof StoreError) return error.code;
   if (object(error)) {
     if (object(error.details) && typeof error.details.code === "string") return error.details.code;
-    if (typeof error.code === "string") return error.code === "PERMISSION_DENIED" ? "permission-denied" : error.code.replace(/^(functions|auth|database)\//, "");
+    if (typeof error.code === "string") return error.code.startsWith("appCheck/") ? "APP_CHECK_REQUIRED" : error.code === "PERMISSION_DENIED" ? "permission-denied" : error.code.replace(/^(functions|auth|database)\//, "");
   }
   return "UNKNOWN";
 }
@@ -118,6 +119,7 @@ export function errorMessage(error: unknown, t: (en: string, te: string) => stri
     AUTH_REQUIRED: ["Sign in before continuing.", "కొనసాగించే ముందు సైన్ ఇన్ చేయండి."],
     unauthenticated: ["This request could not be verified. Sign in again or contact the business.", "ఈ అభ్యర్థన ధృవీకరించబడలేదు. మళ్లీ సైన్ ఇన్ చేయండి లేదా వ్యాపారాన్ని సంప్రదించండి."],
     ADMIN_REQUIRED: ["This account does not have owner access.", "ఈ ఖాతాకు యజమాని అనుమతి లేదు."],
+    TESTER_REQUIRED: ["This private draft is for invited testers. Ask the owner to enable access for your email account.", "ఈ ప్రైవేట్ డ్రాఫ్ట్ ఆహ్వానించిన పరీక్షకుల కోసం. మీ ఇమెయిల్ ఖాతాకు అనుమతి ఇవ్వమని యజమానిని అడగండి."],
     "permission-denied": ["This account cannot access these details. Check your sign-in or contact the business.", "ఈ ఖాతాకు ఈ వివరాల అనుమతి లేదు. సైన్ ఇన్ చూడండి లేదా వ్యాపారాన్ని సంప్రదించండి."],
     INVALID_INPUT: ["Check the fields and quantities, then try again.", "వివరాలు మరియు పరిమాణాలను సరిచూసి మళ్లీ ప్రయత్నించండి."],
     INVALID_ADDRESS: ["Enter a full name, valid mobile number, street address, city and six-digit PIN.", "పూర్తి పేరు, సరైన మొబైల్ నంబర్, వీధి చిరునామా, నగరం మరియు ఆరు అంకెల పిన్ నమోదు చేయండి."],

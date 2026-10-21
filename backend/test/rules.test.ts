@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { DEMO_PROJECT, PREVIEW_ADDRESS, PREVIEW_USERS, previewCommerce, requireDemoEmulators } from '../scripts/fixtures.js';
+import { privateDraftCommerce } from '../scripts/private-draft.js';
 
 let env: RulesTestEnvironment;
 const customerUid = PREVIEW_USERS.customer.uid;
@@ -14,6 +15,7 @@ const customer = () => env.authenticatedContext(customerUid, { email: PREVIEW_US
 const other = () => env.authenticatedContext(otherUid, { email: PREVIEW_USERS.other.email }).database();
 const owner = () => env.authenticatedContext(PREVIEW_USERS.owner.uid, { email: PREVIEW_USERS.owner.email, admin: true }).database();
 const guest = () => env.unauthenticatedContext().database();
+const tester = () => env.authenticatedContext(customerUid, { email: PREVIEW_USERS.customer.email, tester: true }).database();
 
 before(async () => {
   requireDemoEmulators();
@@ -33,6 +35,13 @@ beforeEach(async () => {
       commerce: { ...previewCommerce(),
         ordersByUser: { [customerUid]: { [orderId]: customerOrder }, [otherUid]: { [otherOrder.id]: otherOrder } },
         orderIndex: { [orderId]: customerOrder, [otherOrder.id]: otherOrder },
+        quotes: { 'private-quote-123': { uid: customerUid, secret: true } },
+        idempotency: { 'private-receipt-123': { uid: customerUid, secret: true } },
+        limits: { 'private-limit-123': { count: 1, startedAt: Date.now() } },
+      },
+      commerceDraft: { ...privateDraftCommerce(),
+        ordersByUser: { [customerUid]: { [orderId]: { ...customerOrder, preview: true } } },
+        orderIndex: { [orderId]: { ...customerOrder, preview: true } },
         quotes: { 'private-quote-123': { uid: customerUid, secret: true } },
         idempotency: { 'private-receipt-123': { uid: customerUid, secret: true } },
         limits: { 'private-limit-123': { count: 1, startedAt: Date.now() } },
@@ -77,7 +86,7 @@ describe('UID isolation and strict customer data schemas', () => {
     const ref = db.ref(`users/${customerUid}/profile`);
     await assertSucceeds(ref.set({ ...profile, phoneNumber: '+916000000001' }));
     await assertSucceeds(ref.once('value'));
-    for (const patch of [{ admin: true }, { role: 'owner' }, { email: PREVIEW_USERS.other.email }, { language: 'fr' },
+    for (const patch of [{ admin: true }, { tester: true }, { role: 'owner' }, { email: PREVIEW_USERS.other.email }, { language: 'fr' },
       { displayName: 123 }, { displayName: 'x'.repeat(101) }, { phoneNumber: '+915000000001' }]) {
       await assertFails(ref.set({ ...profile, ...patch }));
     }
@@ -177,6 +186,44 @@ describe('order ownership and server-private records', () => {
         await assertFails(db.ref(path).once('value'));
         await assertFails(db.ref(path).set({ hacked: true }));
       }
+    }
+  });
+});
+
+describe('private draft database permissions', () => {
+  test('the test catalogue is public while the draft ledger and private order data remain scoped', async () => {
+    const db = guest();
+    for (const path of ['commerceDraft/products/groundnut-oil', 'commerceDraft/variants', 'commerceDraft/publicContent/storefront',
+      'commerceDraft/deliveryRules/517001']) await assertSucceeds(db.ref(path).once('value'));
+    await assertFails(db.ref('commerceDraft').once('value'));
+    await assertFails(db.ref('commerceDraft/orderIndex').once('value'));
+    await assertFails(db.ref(`commerceDraft/ordersByUser/${customerUid}`).once('value'));
+  });
+  test('only the approved tester reads their draft history, and admin claims read the owner index', async () => {
+    const history = await assertSucceeds(tester().ref(`commerceDraft/ordersByUser/${customerUid}`).orderByChild('createdAt').limitToLast(50).once('value'));
+    assert.equal(history.numChildren(), 1);
+    await assertSucceeds(owner().ref(`commerceDraft/ordersByUser/${customerUid}/${orderId}`).once('value'));
+    await assertSucceeds(owner().ref('commerceDraft/orderIndex').once('value'));
+    await assertFails(customer().ref(`commerceDraft/ordersByUser/${customerUid}/${orderId}`).once('value'));
+    await assertFails(tester().ref('commerceDraft/orderIndex').once('value'));
+    const foreignTester = env.authenticatedContext(otherUid, { email: PREVIEW_USERS.other.email, tester: true }).database();
+    const fakeTester = env.authenticatedContext(customerUid, { email: PREVIEW_USERS.customer.email, tester: 'true' }).database();
+    for (const db of [foreignTester, fakeTester]) await assertFails(db.ref(`commerceDraft/ordersByUser/${customerUid}/${orderId}`).once('value'));
+    await assertSucceeds(customer().ref(`commerce/ordersByUser/${customerUid}/${orderId}`).once('value'));
+  });
+  test('tester and admin clients cannot edit draft commerce or read private quotes, receipts and limits', async () => {
+    for (const db of [guest(), customer(), tester(), owner()]) {
+      for (const path of ['commerceDraft/variants/1l/stock', 'commerceDraft/variants/1l/pricePaise',
+        'commerceDraft/products/groundnut-oil', 'commerceDraft/deliveryRules/517001', 'commerceDraft/publicContent/storefront',
+        `commerceDraft/orderIndex/${orderId}`, `commerceDraft/ordersByUser/${customerUid}/${orderId}`]) {
+        await assertFails(db.ref(path).set({ hacked: true }));
+      }
+      for (const path of ['commerceDraft/quotes/private-quote-123', 'commerceDraft/idempotency/private-receipt-123',
+        'commerceDraft/limits/private-limit-123']) {
+        await assertFails(db.ref(path).once('value'));
+        await assertFails(db.ref(path).set({ hacked: true }));
+      }
+      await assertFails(db.ref().update({ 'commerceDraft/variants/1l/stock': 999, [`commerceDraft/orderIndex/${orderId}/status`]: 'delivered' }));
     }
   });
 });

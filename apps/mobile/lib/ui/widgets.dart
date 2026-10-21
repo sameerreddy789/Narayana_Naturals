@@ -119,13 +119,19 @@ class ModeBanner extends StatelessWidget {
     if (!app.preview) return const SizedBox.shrink();
     final emulator = app.backend.mode == BackendMode.emulator;
     return ColoredBox(
+      key: const ValueKey('mode_banner'),
       color: Theme.of(context).colorScheme.secondaryContainer,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         child: Semantics(
           liveRegion: true,
           child: Text(
-            emulator
+            app.privateDraft
+                ? context.tr(
+                    'Private demo · Example prices · Orders disabled',
+                    'ప్రైవేట్ డెమో · నమూనా ధరలు · ఆర్డర్లు నిలిపివేయబడ్డాయి',
+                  )
+                : emulator
                 ? context.tr(
                     'Emulator preview · No real order or payment',
                     'ఎమ్యులేటర్ ప్రివ్యూ · నిజమైన ఆర్డర్ లేదా చెల్లింపు లేదు',

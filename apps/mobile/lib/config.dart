@@ -11,8 +11,9 @@ class AppConfig {
   const AppConfig(
     this.mode, {
     this.emulatorHost = '10.0.2.2',
-    this.appCheck = 'off',
+    this.appCheck = 'playIntegrity',
     this.commerceApiUrl = '',
+    this.storeStage = 'production',
   });
   factory AppConfig.fromEnvironment() {
     const mode = String.fromEnvironment(
@@ -25,7 +26,7 @@ class AppConfig {
       'emulator' => BackendMode.emulator,
       _ => throw const AppFailure('invalid-backend-mode'),
     };
-    return AppConfig(
+    final config = AppConfig(
       parsed,
       emulatorHost: const String.fromEnvironment(
         'EMULATOR_HOST',
@@ -33,15 +34,38 @@ class AppConfig {
       ),
       appCheck: const String.fromEnvironment(
         'APP_CHECK_PROVIDER',
-        defaultValue: 'off',
+        defaultValue: 'playIntegrity',
       ),
       commerceApiUrl: const String.fromEnvironment('COMMERCE_API_URL'),
+      storeStage: const String.fromEnvironment(
+        'STORE_STAGE',
+        defaultValue: 'production',
+      ),
     );
+    config.validate();
+    return config;
   }
   final BackendMode mode;
   final String emulatorHost;
   final String appCheck;
   final String commerceApiUrl;
+  final String storeStage;
+  bool get privateDraft => switch (storeStage) {
+    'private-draft' => true,
+    'production' => false,
+    _ => throw const AppFailure('invalid-store-stage'),
+  };
+  String get commerceRoot => privateDraft ? 'commerceDraft' : 'commerce';
+
+  void validate({bool internal = internalBuild}) {
+    final draft = privateDraft;
+    if (!const {'off', 'debug', 'playIntegrity'}.contains(appCheck) ||
+        (appCheck == 'debug' && (!draft || !internal)) ||
+        (mode == BackendMode.firebase && appCheck == 'off')) {
+      throw const AppFailure('APP_CHECK_CONFIG_INVALID');
+    }
+  }
+
   Uri get apiUri {
     final configured = commerceApiUrl.isNotEmpty
         ? commerceApiUrl
@@ -62,12 +86,12 @@ class AppConfig {
     return uri;
   }
 
-  bool get preview => mode != BackendMode.firebase;
+  bool get preview => mode != BackendMode.firebase || privateDraft;
   static const projectId = 'narayananaturals-6b5aa';
   static const emulatorProjectId = 'demo-narayana-naturals';
   static const internalBuild = bool.fromEnvironment(
     'INTERNAL_BUILD',
-    defaultValue: true,
+    defaultValue: false,
   );
 
   // Public Android client configuration from the refreshed owner-supplied
@@ -82,6 +106,7 @@ class AppConfig {
   );
 
   Future<FirebaseApp> initializeFirebase() async {
+    validate();
     final app = mode == BackendMode.emulator
         ? await Firebase.initializeApp(demoProjectId: emulatorProjectId)
         : await Firebase.initializeApp(options: androidOptions);

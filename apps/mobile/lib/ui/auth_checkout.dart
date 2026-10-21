@@ -47,10 +47,6 @@ class _SignInPageState extends State<SignInPage> {
     if (controller == null) {
       controller = context.app;
       controller!.addListener(authChanged);
-      if (controller!.backend.mode == BackendMode.demo) {
-        email.text = 'customer@narayana.test';
-        password.text = 'NarayanaDemo123!';
-      }
     }
   }
 
@@ -151,12 +147,16 @@ class _SignInPageState extends State<SignInPage> {
                 reset
                     ? 'We’ll email you a link to choose a new password.'
                     : demo
-                    ? 'Try a sample account on this device. Preview orders do not leave this device.'
+                    ? 'Sign in to an account on this device. Preview orders stay on this device.'
+                    : app.privateDraft
+                    ? 'Use your approved email account. Your cart and address sync with the website; orders are disabled in this private demo.'
                     : 'Use the same email on the website and app to keep your cart and orders together.',
                 reset
                     ? 'కొత్త పాస్‌వర్డ్ ఎంచుకోవడానికి మీకు ఈమెయిల్ లింక్ పంపుతాము.'
                     : demo
-                    ? 'ఈ పరికరంలో నమూనా ఖాతాను ప్రయత్నించండి. ప్రివ్యూ ఆర్డర్‌లు ఈ పరికరం నుంచి బయటకు వెళ్లవు.'
+                    ? 'ఈ పరికరంలో ఖాతాతో సైన్ ఇన్ చేయండి. ప్రివ్యూ ఆర్డర్‌లు ఈ పరికరంలోనే ఉంటాయి.'
+                    : app.privateDraft
+                    ? 'అనుమతి పొందిన మీ ఈమెయిల్ ఖాతా ఉపయోగించండి. కార్ట్, చిరునామా వెబ్‌సైట్‌తో సేవ్ అవుతాయి; ఈ ప్రైవేట్ డెమోలో ఆర్డర్లు నిలిపివేయబడ్డాయి.'
                     : 'వెబ్‌సైట్, యాప్‌లో అదే ఈమెయిల్‌తో మీ కార్ట్, ఆర్డర్‌లను ఒకే చోట ఉంచండి.',
               ),
             ),
@@ -306,21 +306,6 @@ class _SignInPageState extends State<SignInPage> {
               ),
             ),
             const SizedBox(height: 16),
-            if (app.preview && !reset)
-              TextButton(
-                onPressed: busy
-                    ? null
-                    : () => setState(() {
-                        email.text = 'customer@narayana.test';
-                        password.text = 'NarayanaDemo123!';
-                      }),
-                child: Text(
-                  context.tr(
-                    'Fill sample credentials',
-                    'నమూనా వివరాలు నింపండి',
-                  ),
-                ),
-              ),
             if (!reset && !createAccount)
               Align(
                 alignment: AlignmentDirectional.centerStart,
@@ -375,15 +360,11 @@ class _SignInPageState extends State<SignInPage> {
                     ? 'Send reset link'
                     : createAccount
                     ? 'Create account & continue'
-                    : demo
-                    ? 'Continue in preview'
                     : 'Sign in & continue',
                 reset
                     ? 'రీసెట్ లింక్ పంపండి'
                     : createAccount
                     ? 'ఖాతా సృష్టించి కొనసాగించండి'
-                    : demo
-                    ? 'ప్రివ్యూలో కొనసాగించండి'
                     : 'సైన్ ఇన్ చేసి కొనసాగించండి',
               ),
               onPressed: () => unawaited(submit()),
@@ -751,28 +732,12 @@ class _AddressPageState extends State<AddressPage> {
                               'సరైన ఆరు అంకెల పిన్ నమోదు చేయండి.',
                             ),
                     ),
-                    if (app.preview) ...[
+                    if (app.privateDraft) ...[
                       const SizedBox(height: 16),
                       Text(
                         context.tr(
-                          'Preview PINs: 517001 / 517501 local, 560001 courier.',
-                          'ప్రివ్యూ పిన్‌లు: 517001 / 517501 స్థానికం, 560001 కొరియర్.',
-                        ),
-                      ),
-                      TextButton(
-                        key: const ValueKey('preview_address'),
-                        onPressed: () => setState(() {
-                          name.text = 'Preview Customer';
-                          phone.text = '6000000001';
-                          street.text = '10 Sample Street';
-                          city.text = 'Chittoor';
-                          pin.text = '517001';
-                        }),
-                        child: Text(
-                          context.tr(
-                            'Fill sample preview address',
-                            'నమూనా ప్రివ్యూ చిరునామా పూరించండి',
-                          ),
+                          'Demo PIN: 517502. Delivery terms are pending; ordering is disabled.',
+                          'డెమో పిన్: 517502. డెలివరీ వివరాలు నిర్ధారించాలి; ఆర్డర్లు నిలిపివేయబడ్డాయి.',
                         ),
                       ),
                     ],

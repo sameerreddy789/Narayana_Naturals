@@ -38,6 +38,7 @@ class AppFailure implements Exception {
     'COD_UNAVAILABLE',
     'IDEMPOTENCY_CONFLICT',
     'STORE_CAPACITY',
+    'TESTER_REQUIRED',
   }.contains(code);
   String message(String language) {
     final pair = _messages[code] ?? _messages['unknown']!;
@@ -160,6 +161,18 @@ const _messages = <String, List<String>>{
   'APP_CHECK_REQUIRED': [
     'App verification could not complete. Refresh or contact the store.',
     'యాప్ ధృవీకరణ పూర్తి కాలేదు. రిఫ్రెష్ చేయండి లేదా స్టోర్‌ను సంప్రదించండి.',
+  ],
+  'TESTER_REQUIRED': [
+    'This private demo is for approved accounts. Ask the store to approve your email, then sign in again.',
+    'ఈ ప్రైవేట్ డెమో అనుమతి పొందిన ఖాతాల కోసం. మీ ఈమెయిల్‌కు అనుమతి ఇవ్వమని స్టోర్‌ను అడిగి మళ్లీ సైన్ ఇన్ చేయండి.',
+  ],
+  'invalid-store-stage': [
+    'This app build has an invalid store setting. Install the correct build.',
+    'ఈ యాప్ స్టోర్ సెట్టింగ్ సరైనది కాదు. సరైన వెర్షన్‌ను ఇన్‌స్టాల్ చేయండి.',
+  ],
+  'APP_CHECK_CONFIG_INVALID': [
+    'App verification is not configured for this build. Install the correct build or contact the store.',
+    'ఈ యాప్‌కు ధృవీకరణ సరిగ్గా సెట్ కాలేదు. సరైన వెర్షన్‌ను ఇన్‌స్టాల్ చేయండి లేదా స్టోర్‌ను సంప్రదించండి.',
   ],
   'STORE_CAPACITY': [
     'The store is temporarily unable to accept new orders. Your existing orders are saved.',

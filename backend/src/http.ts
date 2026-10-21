@@ -5,9 +5,12 @@ import { ApiError, exactKeys, fail } from './model.js';
 import type { Actor } from './model.js';
 import type { CommerceService } from './commerce.js';
 
+export interface StoreHealth {
+  configured: boolean; orderingEnabled: boolean; onlinePaymentsEnabled: boolean;
+}
 interface Dependencies {
   service: CommerceService; auth: Auth; appCheck?: AppCheck; isEmulator: boolean; origins: string[];
-  projectId: string; health: () => Promise<boolean>;
+  projectId: string; health: () => Promise<StoreHealth>;
 }
 function send(response: ServerResponse, status: number, data: unknown) {
   if (response.writableEnded || response.destroyed) return;
@@ -60,12 +63,16 @@ export function createCommerceServer(deps: Dependencies) {
         return;
       }
       if (request.method === 'GET' && request.url === '/health') {
-        let ready = false;
-        try { ready = await Promise.race([deps.health(), new Promise<boolean>(resolve => { const t = setTimeout(() => resolve(false), 2500); t.unref(); })]); }
-        catch { ready = false; }
-        send(response, ready ? 200 : 503, { status: ready ? 'ok' : 'store_not_configured',
-          mode: deps.isEmulator ? 'emulator' : 'firebase', projectId: deps.projectId,
-          database: 'realtime', authentication: 'email_password', checkout: 'cod' });
+        let health: StoreHealth = { configured: false, orderingEnabled: false, onlinePaymentsEnabled: false };
+        try { health = await Promise.race([deps.health(), new Promise<StoreHealth>(resolve => {
+          const t = setTimeout(() => resolve({ configured: false, orderingEnabled: false, onlinePaymentsEnabled: false }), 2500); t.unref();
+        })]); }
+        catch { /* Keep the unavailable response and avoid exposing database errors. */ }
+        send(response, health.configured ? 200 : 503, { status: health.configured ? 'ok' : 'store_not_configured',
+          mode: deps.isEmulator ? 'emulator' : 'firebase', stage: deps.service.stage, projectId: deps.projectId,
+          database: 'realtime', authentication: 'email_password',
+          checkout: health.configured && health.orderingEnabled ? 'cod' : 'disabled',
+          onlinePaymentsEnabled: health.configured && health.onlinePaymentsEnabled });
         return;
       }
       const method = request.url?.match(/^\/v1\/(quoteCheckout|placeCodOrder|updateVariant|updateOrderStatus)$/)?.[1] as keyof typeof methods | undefined;

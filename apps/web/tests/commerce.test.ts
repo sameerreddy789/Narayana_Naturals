@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { money, readPreview, type Address } from "../src/lib/demo";
-import { StoreError, errorCode, errorMessage, mergeCartEdit, mergeGuestCart, parseCart, parseOnboarding, parseOrder, parseQuote, parseSettings, removePurchasedLines, validateAddress } from "../src/lib/commerce";
+import { StoreError, errorCode, errorMessage, mergeCartEdit, mergeGuestCart, parseCart, parseOnboarding, parseOrder, parseQuote, parseSettings, parseVariant, removePurchasedLines, validateAddress } from "../src/lib/commerce";
+import { assertPreviewAllowed, resolveStoreConfiguration } from "../src/lib/store-config";
 import { activeCheckoutReview, canReplaceCheckoutReview, checkoutHasContent, checkoutStorageKey, parseCheckoutReview, readCheckoutReview, retainCheckoutAttempt, saveCheckoutReview, type CheckoutReview } from "../src/lib/checkout";
 
 const address: Address = { name: "సమీర్ కుమార్", phone: "6000000001", street: "12, గాంధీ వీధి", city: "చిత్తూరు", pin: "517001" };
@@ -9,6 +10,51 @@ const lines = [{ id: "1l", quantity: 2, litres: 1, unitPricePaise: 45050 }];
 const quote = { quoteId: "quote_abcdefgh", subtotalPaise: 90100, shippingPaise: 4000, totalPaise: 94100, codAllowed: true, estimate: "1–2 days", expiresAt: "2026-10-20T12:10:00.000Z", preview: true, lines };
 const order = { id: "order_abcdefgh", uid: "customer-a", customerPhone: "+916000000001", createdAt: "2026-10-20T12:00:00.000Z", lines, address, subtotalPaise: 90100, shippingPaise: 4000, totalPaise: 94100, paymentMethod: "cod", paymentStatus: "pending_collection", status: "received", channel: "web", preview: true };
 const isInvalid = (reason: unknown) => reason instanceof StoreError && ["INVALID_DATA", "INVALID_ADDRESS"].includes(reason.code);
+
+test("unconfigured builds use Firebase production and never silently create a local demo account", () => {
+  const configuration = resolveStoreConfiguration();
+  assert.equal(configuration.backendMode, "firebase");
+  assert.equal(configuration.storeStage, "production");
+  assert.equal(configuration.commerceRoot, "commerce");
+  for (const values of [{ mode: "preview" }, { mode: "" }, { stage: "draft" }, { stage: "" }, { appCheckDebug: "yes" }]) {
+    assert.throws(() => resolveStoreConfiguration(values), (reason: unknown) => reason instanceof StoreError && reason.code === "CONFIG_REQUIRED");
+  }
+});
+
+test("private draft and emulator records cannot authorize a production purchase", () => {
+  const production = resolveStoreConfiguration();
+  const draft = resolveStoreConfiguration({ stage: "private-draft" });
+  const emulator = resolveStoreConfiguration({ mode: "emulator" });
+  assert.equal(draft.commerceRoot, "commerceDraft");
+  assert.equal(emulator.commerceRoot, "commerce");
+  for (const preview of [parseQuote(quote).preview, parseOrder(order.id, order)!.preview, parseSettings({ orderingEnabled: false, onlinePaymentsEnabled: false, preview: true })!.preview]) {
+    assert.throws(() => assertPreviewAllowed(preview, production), (reason: unknown) => reason instanceof StoreError && reason.code === "STORE_NOT_READY");
+    assert.doesNotThrow(() => assertPreviewAllowed(preview, draft));
+    assert.doesNotThrow(() => assertPreviewAllowed(preview, emulator));
+  }
+  assert.doesNotThrow(() => assertPreviewAllowed(false, production));
+});
+
+test("browser App Check debug activation requires Firebase and an explicit private draft", () => {
+  assert.equal(resolveStoreConfiguration({ mode: "firebase", stage: "private-draft", appCheckDebug: "true" }).appCheckDebug, true);
+  assert.equal(resolveStoreConfiguration({ stage: "private-draft" }).appCheckDebug, false);
+  for (const values of [{ appCheckDebug: "true" }, { mode: "firebase", stage: "production", appCheckDebug: "true" }, { mode: "emulator", stage: "private-draft", appCheckDebug: "true" }]) {
+    assert.throws(() => resolveStoreConfiguration(values), (reason: unknown) => reason instanceof StoreError && reason.code === "CONFIG_REQUIRED");
+  }
+});
+
+test("unconfirmed packed stock remains pending data and is not changed into a sold-out assertion", () => {
+  const pending = parseVariant("1l", { id: "1l", litres: 1, pricePaise: 45000, stock: 0, enabled: true, preview: true, stockConfirmed: false });
+  assert.equal(pending.stock, 0);
+  assert.equal(pending.stockConfirmed, false);
+  assert.throws(() => parseVariant("1l", { ...pending, stockConfirmed: "false" }), isInvalid);
+});
+
+test("private invitation and App Check failures keep distinct bilingual recovery messages", () => {
+  assert.match(errorMessage(new StoreError("TESTER_REQUIRED"), en => en), /invited testers/);
+  assert.match(errorMessage(new StoreError("TESTER_REQUIRED"), (_en, te) => te), /అనుమతి/);
+  assert.equal(errorCode({ code: "appCheck/fetch-status-error" }), "APP_CHECK_REQUIRED");
+});
 
 test("Realtime Database omission of empty arrays restores an empty cart and guide without accepting malformed content", () => {
   assert.deepEqual(parseCart(null), []);

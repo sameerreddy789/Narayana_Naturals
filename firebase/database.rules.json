@@ -20,6 +20,24 @@
         ".indexOn": ["createdAt"]
       }
     },
+    "commerceDraft": {
+      "products": {
+        "groundnut-oil": { ".read": "data.child('published').val() === true" }
+      },
+      "variants": { ".read": true },
+      "publicContent": { "storefront": { ".read": true } },
+      "deliveryRules": { "$pin": { ".read": true } },
+      "ordersByUser": {
+        "$uid": {
+          ".read": "auth != null && (auth.token.admin === true || (auth.uid === $uid && auth.token.tester === true))",
+          ".indexOn": ["createdAt"]
+        }
+      },
+      "orderIndex": {
+        ".read": "auth != null && auth.token.admin === true",
+        ".indexOn": ["createdAt"]
+      }
+    },
     "users": {
       "$uid": {
         "profile": {

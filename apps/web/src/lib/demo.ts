@@ -1,6 +1,6 @@
 export type Language = "en" | "te";
 export type PackId = "1l" | "2l" | "5l";
-export type Variant = { id: PackId; litres: number; pricePaise: number; stock: number; enabled: boolean; preview?: boolean };
+export type Variant = { id: PackId; litres: number; pricePaise: number; stock: number; enabled: boolean; preview?: boolean; stockConfirmed?: boolean };
 export type CartLine = { id: PackId; quantity: number };
 export type DemoUser = { uid: string; name: string; phone: string; email?: string; admin: boolean };
 export type Address = { name: string; phone: string; street: string; city: string; pin: string };
