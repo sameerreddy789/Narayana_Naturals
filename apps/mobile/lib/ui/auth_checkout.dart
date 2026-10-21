@@ -149,14 +149,14 @@ class _SignInPageState extends State<SignInPage> {
                     : demo
                     ? 'Sign in to an account on this device. Preview orders stay on this device.'
                     : app.privateDraft
-                    ? 'Use your approved email account. Your cart and address sync with the website; orders are disabled in this private demo.'
+                    ? 'Use the same email on the website and app. Your cart and saved address sync; demo receipts stay on the device where you confirm them.'
                     : 'Use the same email on the website and app to keep your cart and orders together.',
                 reset
                     ? 'కొత్త పాస్‌వర్డ్ ఎంచుకోవడానికి మీకు ఈమెయిల్ లింక్ పంపుతాము.'
                     : demo
                     ? 'ఈ పరికరంలో ఖాతాతో సైన్ ఇన్ చేయండి. ప్రివ్యూ ఆర్డర్‌లు ఈ పరికరంలోనే ఉంటాయి.'
                     : app.privateDraft
-                    ? 'అనుమతి పొందిన మీ ఈమెయిల్ ఖాతా ఉపయోగించండి. కార్ట్, చిరునామా వెబ్‌సైట్‌తో సేవ్ అవుతాయి; ఈ ప్రైవేట్ డెమోలో ఆర్డర్లు నిలిపివేయబడ్డాయి.'
+                    ? 'వెబ్‌సైట్ మరియు యాప్‌లో అదే ఈమెయిల్ వాడండి. కార్ట్, సేవ్ చేసిన చిరునామా రెండింటిలో కనిపిస్తాయి; డెమో రసీదులు ధృవీకరించిన పరికరంలోనే ఉంటాయి.'
                     : 'వెబ్‌సైట్, యాప్‌లో అదే ఈమెయిల్‌తో మీ కార్ట్, ఆర్డర్‌లను ఒకే చోట ఉంచండి.',
               ),
             ),
@@ -439,8 +439,12 @@ class _WelcomePageState extends State<WelcomePage> {
               'నారాయణ నేచురల్స్‌కు స్వాగతం',
             ),
             description: context.tr(
-              'Your email account keeps your cart, address and orders together across the website and app.',
-              'మీ ఈమెయిల్ ఖాతా వెబ్‌సైట్, యాప్‌లో కార్ట్, చిరునామా, ఆర్డర్‌లను ఒకే చోట ఉంచుతుంది.',
+              context.app.privateDraft
+                  ? 'Your email account shares your cart and address with the website. Demo receipts stay on this device.'
+                  : 'Your email account keeps your cart, address and orders together across the website and app.',
+              context.app.privateDraft
+                  ? 'మీ ఈమెయిల్ ఖాతాతో కార్ట్, చిరునామా వెబ్‌సైట్‌తో పంచుకోబడతాయి. డెమో రసీదులు ఈ పరికరంలో ఉంటాయి.'
+                  : 'మీ ఈమెయిల్ ఖాతా వెబ్‌సైట్, యాప్‌లో కార్ట్, చిరునామా, ఆర్డర్‌లను ఒకే చోట ఉంచుతుంది.',
             ),
           ),
           const LanguageChoice(),
@@ -469,8 +473,8 @@ class _WelcomePageState extends State<WelcomePage> {
           Text(
             context.app.privateDraft
                 ? context.tr(
-                    'Save your address. Orders and payments are disabled in this private demonstration.',
-                    'మీ చిరునామా సేవ్ చేయండి. ఈ ప్రైవేట్ ప్రదర్శనలో ఆర్డర్లు, చెల్లింపులు నిలిపివేయబడ్డాయి.',
+                    'Save your address, review the bill and confirm a demo payment. No money is collected.',
+                    'చిరునామా సేవ్ చేసి, బిల్లు చూసి డెమో చెల్లింపు ధృవీకరించండి. డబ్బు తీసుకోబడదు.',
                   )
                 : context.tr(
                     'Review the total and pay cash on delivery.',
@@ -546,6 +550,7 @@ class _AddressPageState extends State<AddressPage> {
   }
 
   Future<void> review() async {
+    if (busy || context.app.checkoutBusy) return;
     if (!form.currentState!.validate()) return;
     final app = context.app, uid = owner;
     final address = DeliveryAddress(
@@ -555,6 +560,10 @@ class _AddressPageState extends State<AddressPage> {
       city: city.text.trim(),
       pin: pin.text.trim(),
     );
+    if (widget.checkout && app.privateDraft && address.pin != '517502') {
+      setState(() => error = const AppFailure('DEMO_PIN'));
+      return;
+    }
     setState(() {
       busy = true;
       error = null;
@@ -593,10 +602,21 @@ class _AddressPageState extends State<AddressPage> {
             const ModeBanner(),
             const SizedBox(height: 20),
             PageTitle(
-              context.tr('Where should we deliver?', 'ఎక్కడ డెలివరీ చేయాలి?'),
+              context.tr(
+                app.privateDraft
+                    ? 'Your delivery details'
+                    : 'Where should we deliver?',
+                app.privateDraft
+                    ? 'మీ డెలివరీ వివరాలు'
+                    : 'ఎక్కడ డెలివరీ చేయాలి?',
+              ),
               description: context.tr(
-                'Your PIN determines delivery availability, charges and cash on delivery.',
-                'మీ పిన్ డెలివరీ లభ్యత, ఛార్జీలు, నగదు చెల్లింపును నిర్ణయిస్తుంది.',
+                app.privateDraft
+                    ? 'Use PIN 517502 to try the demo bill. Your address is saved to your account.'
+                    : 'Your PIN determines delivery availability, charges and cash on delivery.',
+                app.privateDraft
+                    ? 'డెమో బిల్లు కోసం పిన్ 517502 ఉపయోగించండి. చిరునామా మీ ఫైర్‌బేస్ ఖాతాలో సేవ్ అవుతుంది.'
+                    : 'మీ పిన్ డెలివరీ లభ్యత, ఛార్జీలు, నగదు చెల్లింపును నిర్ణయిస్తుంది.',
               ),
             ),
             if (widget.checkout)
@@ -749,8 +769,8 @@ class _AddressPageState extends State<AddressPage> {
                       const SizedBox(height: 16),
                       Text(
                         context.tr(
-                          'Demo PIN: 517502. Delivery terms are pending; ordering is disabled.',
-                          'డెమో పిన్: 517502. డెలివరీ వివరాలు నిర్ధారించాలి; ఆర్డర్లు నిలిపివేయబడ్డాయి.',
+                          'Demo PIN: 517502. Example prices and ₹0 demo delivery. No real payment or shipment.',
+                          'డెమో పిన్: 517502. నమూనా ధరలు, ₹0 డెమో డెలివరీ. నిజమైన చెల్లింపు లేదా రవాణా లేదు.',
                         ),
                       ),
                     ],
@@ -760,8 +780,12 @@ class _AddressPageState extends State<AddressPage> {
                       key: const ValueKey('address_review'),
                       label: widget.checkout
                           ? context.tr(
-                              'Check delivery & total',
-                              'డెలివరీ, మొత్తం తనిఖీ చేయండి',
+                              app.privateDraft
+                                  ? 'Review demo bill'
+                                  : 'Check delivery & total',
+                              app.privateDraft
+                                  ? 'డెమో బిల్లు చూడండి'
+                                  : 'డెలివరీ, మొత్తం తనిఖీ చేయండి',
                             )
                           : context.tr('Save address', 'చిరునామా సేవ్ చేయండి'),
                       busy: busy || app.checkoutBusy,
@@ -906,16 +930,31 @@ class _ReviewCheckoutPageState extends State<ReviewCheckoutPage> {
                 money(quote.subtotalPaise),
               ),
               TotalRow(
-                context.tr('Delivery', 'డెలివరీ'),
+                context.tr(
+                  quote.localDemo ? 'Demo delivery' : 'Delivery',
+                  quote.localDemo ? 'డెమో డెలివరీ' : 'డెలివరీ',
+                ),
                 money(quote.shippingPaise),
               ),
               TotalRow(
-                context.tr('Total to pay', 'చెల్లించాల్సిన మొత్తం'),
+                context.tr(
+                  quote.localDemo ? 'Demo bill total' : 'Total to pay',
+                  quote.localDemo
+                      ? 'డెమో బిల్లు మొత్తం'
+                      : 'చెల్లించాల్సిన మొత్తం',
+                ),
                 money(quote.totalPaise),
                 strong: true,
               ),
               const SizedBox(height: 16),
-              Text(quote.estimate),
+              Text(
+                quote.localDemo
+                    ? context.tr(
+                        'Example prices · ₹0 demo delivery · No shipment booked',
+                        'నమూనా ధరలు · ₹0 డెమో డెలివరీ · రవాణా బుక్ కాలేదు',
+                      )
+                    : quote.estimate,
+              ),
               const SizedBox(height: 28),
               Text(
                 context.tr('Deliver to', 'డెలివరీ చిరునామా'),
@@ -927,12 +966,20 @@ class _ReviewCheckoutPageState extends State<ReviewCheckoutPage> {
               Text('+91 ${pending.address.phone}'),
               const SizedBox(height: 28),
               Text(
-                context.tr('Cash on delivery', 'డెలివరీ సమయంలో నగదు'),
+                context.tr(
+                  quote.localDemo ? 'Demo payment' : 'Cash on delivery',
+                  quote.localDemo ? 'డెమో చెల్లింపు' : 'డెలివరీ సమయంలో నగదు',
+                ),
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
               Text(
-                quote.preview
+                quote.localDemo
+                    ? context.tr(
+                        'Confirm below to simulate payment and save your receipt on this device. No money will be collected.',
+                        'కింద ధృవీకరించి చెల్లింపు అనుకరణ చేసి రసీదు ఈ పరికరంలో సేవ్ చేయండి. డబ్బు తీసుకోబడదు.',
+                      )
+                    : quote.preview
                     ? context.tr(
                         'This is a preview. No payment or delivery will occur.',
                         'ఇది ప్రివ్యూ. చెల్లింపు లేదా డెలివరీ జరగదు.',
@@ -945,8 +992,12 @@ class _ReviewCheckoutPageState extends State<ReviewCheckoutPage> {
               const SizedBox(height: 12),
               Text(
                 context.tr(
-                  'Online payment is unavailable.',
-                  'ఆన్‌లైన్ చెల్లింపు అందుబాటులో లేదు.',
+                  quote.localDemo
+                      ? 'Amount collected: ₹0'
+                      : 'Online payment is unavailable.',
+                  quote.localDemo
+                      ? 'తీసుకునే మొత్తం: ₹0'
+                      : 'ఆన్‌లైన్ చెల్లింపు అందుబాటులో లేదు.',
                 ),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -962,12 +1013,19 @@ class _ReviewCheckoutPageState extends State<ReviewCheckoutPage> {
                 FailurePanel(error: AppFailure(pending.rejectionCode!)),
               if (error != null) FailurePanel(error: error!),
               BusyButton(
-                key: const ValueKey('confirm_cod'),
+                key: ValueKey(
+                  quote.localDemo ? 'confirm_demo_payment' : 'confirm_cod',
+                ),
                 busy: app.checkoutBusy,
                 label: pending.orderId != null
                     ? context.tr(
                         'View confirmed order',
                         'ధృవీకరించిన ఆర్డర్ చూడండి',
+                      )
+                    : quote.localDemo
+                    ? context.tr(
+                        'Confirm demo payment',
+                        'డెమో చెల్లింపు ధృవీకరించండి',
                       )
                     : pending.attempted
                     ? context.tr(
@@ -1011,8 +1069,12 @@ class _ReviewCheckoutPageState extends State<ReviewCheckoutPage> {
               const SizedBox(height: 16),
               Text(
                 context.tr(
-                  'A delivery quote lasts ten minutes. Current stock is checked again when you confirm.',
-                  'డెలివరీ కోట్ పది నిమిషాలు చెల్లుతుంది. ధృవీకరణ సమయంలో తాజా స్టాక్ మళ్లీ తనిఖీ అవుతుంది.',
+                  quote.localDemo
+                      ? 'This demo bill lasts ten minutes. Cart and example prices are checked again before confirmation.'
+                      : 'A delivery quote lasts ten minutes. Current stock is checked again when you confirm.',
+                  quote.localDemo
+                      ? 'డెమో బిల్లు పది నిమిషాలు చెల్లుతుంది. ధృవీకరణకు ముందు కార్ట్, నమూనా ధరలు మళ్లీ తనిఖీ అవుతాయి.'
+                      : 'డెలివరీ కోట్ పది నిమిషాలు చెల్లుతుంది. ధృవీకరణ సమయంలో తాజా స్టాక్ మళ్లీ తనిఖీ అవుతుంది.',
                 ),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -1044,7 +1106,14 @@ class OrderConfirmationPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(context.tr('Order received', 'ఆర్డర్ స్వీకరించబడింది')),
+      title: Text(
+        context.tr(
+          checkout.quote.localDemo ? 'Demo completed' : 'Order received',
+          checkout.quote.localDemo
+              ? 'డెమో పూర్తయింది'
+              : 'ఆర్డర్ స్వీకరించబడింది',
+        ),
+      ),
     ),
     body: SafeArea(
       child: PageBody(
@@ -1060,13 +1129,23 @@ class OrderConfirmationPage extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             PageTitle(
-              checkout.quote.preview
+              checkout.quote.localDemo
+                  ? context.tr(
+                      'Demo payment confirmed',
+                      'డెమో చెల్లింపు ధృవీకరించబడింది',
+                    )
+                  : checkout.quote.preview
                   ? context.tr(
                       'Preview order received',
                       'ప్రివ్యూ ఆర్డర్ స్వీకరించబడింది',
                     )
                   : context.tr('Your order is with us', 'మీ ఆర్డర్ అందింది'),
-              description: checkout.quote.preview
+              description: checkout.quote.localDemo
+                  ? context.tr(
+                      'Your receipt is saved on this device for your account. No money was collected and no delivery was booked.',
+                      'రసీదు మీ ఖాతా కోసం ఈ పరికరంలో సేవ్ అయింది. డబ్బు తీసుకోబడలేదు, డెలివరీ బుక్ కాలేదు.',
+                    )
+                  : checkout.quote.preview
                   ? context.tr(
                       'This is a sample order. No real payment or delivery will occur.',
                       'ఇది నమూనా ఆర్డర్. నిజమైన చెల్లింపు లేదా డెలివరీ జరగదు.',
@@ -1082,7 +1161,12 @@ class OrderConfirmationPage extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             TotalRow(
-              context.tr('Order total', 'ఆర్డర్ మొత్తం'),
+              context.tr(
+                checkout.quote.localDemo ? 'Demo bill total' : 'Order total',
+                checkout.quote.localDemo
+                    ? 'డెమో బిల్లు మొత్తం'
+                    : 'ఆర్డర్ మొత్తం',
+              ),
               money(checkout.quote.totalPaise),
               strong: true,
             ),
@@ -1099,7 +1183,14 @@ class OrderConfirmationPage extends StatelessWidget {
             FilledButton(
               onPressed: onDetail,
               child: Text(
-                context.tr('View order status', 'ఆర్డర్ స్థితి చూడండి'),
+                context.tr(
+                  checkout.quote.localDemo
+                      ? 'View demo receipt'
+                      : 'View order status',
+                  checkout.quote.localDemo
+                      ? 'డెమో రసీదు చూడండి'
+                      : 'ఆర్డర్ స్థితి చూడండి',
+                ),
               ),
             ),
             const SizedBox(height: 12),

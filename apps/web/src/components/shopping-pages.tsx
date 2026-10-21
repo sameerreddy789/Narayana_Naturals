@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, Check, Leaf, MapPin, Minus, Plus, ShoppingBag, T
 import { cartSubtotal, money, type Address, type PackId } from "@/lib/demo";
 import { PACK_LITRES, errorCode, languageText, validateAddress, type DeliveryCheck } from "@/lib/commerce";
 import { privateDraft } from "@/lib/firebase";
+import { assertDemoBillCurrent, cartQuantityLimit, type DemoBill } from "@/lib/demo-checkout";
 import { activeCheckoutReview, canReplaceCheckoutReview, checkoutHasContent, readCheckoutReview, removeCheckoutReview, retainCheckoutAttempt, saveCheckoutReview, type CheckoutReview } from "@/lib/checkout";
 import { usePreview } from "./preview-provider";
 import { ProductArt } from "./product-art";
@@ -24,9 +25,9 @@ function PackCards() {
   return <div className="product-grid">{state.variants.map((variant, index) => <article className="product-card" key={variant.id}>
     <Link className={"product-card-art art-" + variant.id} href={"/oil/groundnut?pack=" + variant.id} aria-label={t("View", "చూడండి") + " " + variant.litres + " " + t("litre pack", "లీటర్ల ప్యాక్")}><ProductArt pack={variant.id} /></Link>
     <div className="product-card-content"><div className="product-card-title"><h3>{variant.litres} {t(variant.litres === 1 ? "litre" : "litres", "లీటర్లు")}</h3><strong>{money(variant.pricePaise)}</strong></div><p>{labels[index]}</p>
-      {privateDraft && <p className="small-note">{t("Example price", "నమూనా ధర")}</p>}
-      <button className="button secondary" onClick={() => void addPack(variant.id)} disabled={!ready || !accountReady || cartBusy || !variant.enabled || variant.stock === 0 || (privateDraft && variant.stockConfirmed === false)}>
-        {privateDraft && variant.stockConfirmed === false ? t("Stock pending", "స్టాక్ నిర్ధారణ కావాలి") : !variant.enabled ? t("Unavailable", "అందుబాటులో లేదు") : variant.stock === 0 ? t("Out of stock", "స్టాక్ లేదు") : cartBusy ? t("Updating cart…", "కార్ట్ మారుతోంది…") : t("Add to cart", "కార్ట్‌లో చేర్చండి")}<Plus size={17} />
+      {privateDraft && <p className="small-note">{t("Example price · Demo pack · Stock unconfirmed", "నమూనా ధర · డెమో ప్యాక్ · స్టాక్ నిర్ధారించాలి")}</p>}
+      <button className="button secondary" onClick={() => void addPack(variant.id)} disabled={!ready || !accountReady || cartBusy || cartQuantityLimit(variant, privateDraft) === 0 || (state.cart.find(line => line.id === variant.id)?.quantity ?? 0) >= cartQuantityLimit(variant, privateDraft)}>
+        {!variant.enabled ? t("Unavailable", "అందుబాటులో లేదు") : !privateDraft && variant.stock === 0 ? t("Out of stock", "స్టాక్ లేదు") : cartBusy ? t("Updating cart…", "కార్ట్ మారుతోంది…") : t("Add to cart", "కార్ట్‌లో చేర్చండి")}<Plus size={17} />
       </button>
     </div>
   </article>)}</div>;
@@ -82,7 +83,7 @@ export function ProductPage() {
   if (catalogueError) return <section className="page-width standard-page"><DataStatus error={catalogueError} /></section>;
   if (!catalogueAvailable || !product || !variant) return <section className="page-width standard-page"><EmptyState title={t("This oil pack is unavailable", "ఈ నూనె ప్యాక్ అందుబాటులో లేదు")} description={t("Return to all packs to see what is available.", "అందుబాటులో ఉన్న ప్యాక్‌లను చూడడానికి అన్ని ప్యాక్‌లకు వెళ్లండి.")} action={t("All packs", "అన్ని ప్యాక్‌లు")} /></section>;
   const stockPending = privateDraft && variant.stockConfirmed === false;
-  const unavailable = stockPending || !variant.enabled || variant.stock === 0;
+  const unavailable = cartQuantityLimit(variant, privateDraft) === 0;
   return <section className="page-width standard-page">
     <Link className="back-link" href="/shop"><ArrowLeft size={17} aria-hidden="true" />{t("All packs", "అన్ని ప్యాక్‌లు")}</Link>
     <div className="product-detail"><div className={"product-detail-art art-" + pack}><ProductArt pack={pack} /><p>{t("Packaging concept", "ప్యాకేజింగ్ నమూనా")}</p></div>
@@ -91,13 +92,13 @@ export function ProductPage() {
           <input type="radio" name="pack" value={variant.id} checked={pack === variant.id} onChange={() => { setPack(variant.id); setQuantity(1); }} /><strong>{variant.litres} L</strong><span>{money(variant.pricePaise)}</span>
         </label>)}</div></fieldset>
         <div className="price-stock"><strong>{money(variant.pricePaise)}</strong><span className={"stock-label " + (unavailable ? "unavailable" : "")}><span />{stockPending ? t("Stock pending", "స్టాక్ నిర్ధారణ కావాలి") : unavailable ? t("Unavailable", "అందుబాటులో లేదు") : mode === "firebase" && !privateDraft ? t("In stock", "స్టాక్ ఉంది") : t("Available in preview", "ప్రివ్యూలో అందుబాటులో ఉంది")}</span></div>
-        {privateDraft && <p className="small-note">{t("Example price. Orders are paused while stock and delivery terms are confirmed.", "నమూనా ధర. స్టాక్ మరియు డెలివరీ వివరాలు నిర్ధారించే వరకు ఆర్డర్లు నిలిపివేయబడ్డాయి.")}</p>}
+        {privateDraft && <p className="small-note">{t("Example price. Try a simulated checkout; physical stock is unconfirmed and no shipment is booked.", "నమూనా ధర. చెక్అవుట్ అనుకరణ ప్రయత్నించండి; అసలు స్టాక్ నిర్ధారించాలి, రవాణా బుక్ చేయబడదు.")}</p>}
         <div className="quantity-row"><span>{t("Quantity", "పరిమాణం")}</span><div className="quantity-control">
           <button aria-label={t("Decrease quantity", "పరిమాణం తగ్గించండి")} disabled={quantity <= 1 || checking || adding} onClick={() => setQuantity(quantity => quantity - 1)}><Minus size={16} /></button><span aria-live="polite">{quantity}</span>
-          <button aria-label={t("Increase quantity", "పరిమాణం పెంచండి")} disabled={quantity >= Math.min(variant.stock, 20) || checking || adding} onClick={() => setQuantity(quantity => quantity + 1)}><Plus size={16} /></button>
+          <button aria-label={t("Increase quantity", "పరిమాణం పెంచండి")} disabled={quantity >= cartQuantityLimit(variant, privateDraft) || checking || adding} onClick={() => setQuantity(quantity => quantity + 1)}><Plus size={16} /></button>
         </div></div>
         <div className="product-purchase"><button className="button primary" disabled={!ready || !accountReady || unavailable || cartBusy || adding} onClick={() => void purchase()}>{adding ? t("Adding…", "చేరుతోంది…") : t("Add to cart", "కార్ట్‌లో చేర్చండి")}<ShoppingBag size={18} /></button>
-          <button className="button secondary" disabled={!ready || !accountReady || unavailable || cartBusy || adding} onClick={() => void purchase(true)}>{t("Buy now", "ఇప్పుడే కొనండి")}<ArrowRight size={18} /></button>
+          <button className="button secondary" disabled={!ready || !accountReady || unavailable || cartBusy || adding} onClick={() => void purchase(true)}>{privateDraft ? t("Try checkout", "చెక్అవుట్ ప్రయత్నించండి") : t("Buy now", "ఇప్పుడే కొనండి")}<ArrowRight size={18} /></button>
         </div>
         <div className="delivery-check"><label htmlFor="product-pin"><MapPin size={17} />{t("Check delivery to your PIN", "మీ పిన్‌కు డెలివరీ చూడండి")}</label><div>
           <input id="product-pin" inputMode="numeric" maxLength={6} disabled={checking} value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, ""))} placeholder={mode === "firebase" ? t("Six-digit PIN", "ఆరు అంకెల పిన్") : "e.g. 517001"} />
@@ -117,7 +118,7 @@ export function ProductPage() {
 export function CartPage() {
   const { state, mode, ready, accountReady, accountError, catalogueReady, catalogueError, t, setQuantity, cartBusy } = usePreview();
   const subtotal = cartSubtotal(state.cart, state.variants);
-  const valid = state.cart.every(line => { const variant = state.variants.find(variant => variant.id === line.id); return !!variant?.enabled && line.quantity <= variant.stock; });
+  const valid = state.cart.every(line => line.quantity <= cartQuantityLimit(state.variants.find(variant => variant.id === line.id), privateDraft));
   return <section className="page-width standard-page"><PageHeading title={t("Your cart", "మీ కార్ట్")} description={t("A little tradition, ready for your kitchen.", "మీ వంటింటికి సిద్ధంగా ఉన్న సాంప్రదాయం.")} />
     {!ready ? <DataStatus loading={t("Loading your cart…", "కార్ట్ లోడ్ అవుతోంది…")} /> : <>
       {accountError ? <DataStatus error={accountError} /> : !accountReady && <DataStatus loading={t("Synchronizing your saved cart…", "సేవ్ చేసిన కార్ట్ సమకాలీకరణ అవుతోంది…")} />}
@@ -126,11 +127,11 @@ export function CartPage() {
         {state.cart.map(line => {
           const variant = state.variants.find(variant => variant.id === line.id);
           const litres = variant?.litres ?? PACK_LITRES[line.id];
-          const available = !!variant?.enabled && line.quantity <= variant.stock;
+          const available = line.quantity <= cartQuantityLimit(variant, privateDraft);
           return <article className="cart-line" key={line.id}><Link href={"/oil/groundnut?pack=" + line.id} className={"cart-line-art art-" + line.id} aria-label={t("View oil pack", "నూనె ప్యాక్ చూడండి") + " " + litres + " L"}><ProductArt pack={line.id} /></Link>
             <div className="cart-line-copy"><h2>{t("Ghani groundnut oil", "ఘానీ వేరుశెనగ నూనె")}</h2><p>{litres} L · {variant ? money(variant.pricePaise) : t("Price unavailable", "ధర అందుబాటులో లేదు")} {t("per pack", "ఒక్క ప్యాక్")}</p>
               <div className="quantity-control"><button disabled={!accountReady || cartBusy} aria-label={t("Decrease pack quantity", "ప్యాక్ పరిమాణం తగ్గించండి") + " " + litres + " L"} onClick={() => void setQuantity(line.id, line.quantity - 1)}><Minus size={15} /></button><span>{line.quantity}</span>
-                <button aria-label={t("Increase pack quantity", "ప్యాక్ పరిమాణం పెంచండి") + " " + litres + " L"} disabled={!accountReady || cartBusy || !variant?.enabled || line.quantity >= Math.min(variant?.stock ?? 0, 20)} onClick={() => void setQuantity(line.id, line.quantity + 1)}><Plus size={15} /></button>
+                <button aria-label={t("Increase pack quantity", "ప్యాక్ పరిమాణం పెంచండి") + " " + litres + " L"} disabled={!accountReady || cartBusy || line.quantity >= cartQuantityLimit(variant, privateDraft)} onClick={() => void setQuantity(line.id, line.quantity + 1)}><Plus size={15} /></button>
               </div>{catalogueReady && !available && <p className="error-text">{t("This quantity is unavailable. Reduce it or remove the pack.", "ఈ పరిమాణం అందుబాటులో లేదు. తగ్గించండి లేదా ప్యాక్ తొలగించండి.")}</p>}
             </div><div className="cart-line-end"><strong>{variant ? money(variant.pricePaise * line.quantity) : "—"}</strong><button className="text-button subtle" disabled={!accountReady || cartBusy} onClick={() => void setQuantity(line.id, 0)} aria-label={t("Remove pack", "ప్యాక్ తొలగించండి") + " " + litres + " L"}><X size={15} />{t("Remove", "తొలగించండి")}</button></div>
           </article>;
@@ -156,6 +157,108 @@ export function AddressFields({ address, onChange }: { address: Address; onChang
 }
 
 export function CheckoutPage() {
+  return privateDraft ? <DemoCheckoutPage /> : <StandardCheckoutPage />;
+}
+
+function DemoCheckoutPage() {
+  const { state, ready, accountReady, accountError, catalogueReady, catalogueError, catalogueAvailable,
+    cartBusy, offline, t, saveAddress, quoteDemoCheckout, confirmDemoPayment, explainError } = usePreview();
+  const router = useRouter();
+  const uid = state.user?.uid ?? null;
+  const [address, setAddress] = useState<Address>(emptyAddress);
+  const [bill, setBill] = useState<DemoBill | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(0);
+  const busyRef = useRef(false);
+  const currentUid = useRef(uid); currentUid.current = uid;
+  useEffect(() => {
+    busyRef.current = false; setBusy(false); setBill(null); setError('');
+    setAddress(uid && accountReady ? state.addresses[uid] ?? { ...emptyAddress(), name: state.user?.name ?? '', pin: '517502' } : emptyAddress());
+    // Load once for each authenticated account; editing a bill must not be
+    // overwritten by a later saved-address event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, accountReady]);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+  const currentBill = bill?.uid === uid ? bill : null;
+  let billValid = !!currentBill;
+  if (currentBill) {
+    try { assertDemoBillCurrent(currentBill, uid!, state.cart, state.variants, now || Date.now()); }
+    catch { billValid = false; }
+  }
+  function changeAddress(value: Address) { setAddress(value); setBill(null); setError(''); }
+  async function review(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busyRef.current || !uid) return;
+    const requestingUid = uid;
+    busyRef.current = true; setBusy(true); setError('');
+    try {
+      const valid = validateAddress(address);
+      if (valid.pin !== '517502') throw new Error('demo-pin');
+      await saveAddress(valid);
+      if (currentUid.current !== requestingUid) return;
+      const result = await quoteDemoCheckout(valid);
+      if (currentUid.current === requestingUid) setBill(result);
+    } catch (reason) {
+      if (currentUid.current === requestingUid) setError(reason instanceof Error && reason.message === 'demo-pin'
+        ? t('Use PIN 517502 for this demonstration.', 'ఈ ప్రదర్శనకు పిన్ 517502 ఉపయోగించండి.') : explainError(reason));
+    } finally { if (currentUid.current === requestingUid) { busyRef.current = false; setBusy(false); } }
+  }
+  async function confirm() {
+    if (busyRef.current || !currentBill || !billValid) return;
+    const requestingUid = uid;
+    busyRef.current = true; setBusy(true); setError('');
+    try {
+      const id = await confirmDemoPayment(currentBill);
+      if (currentUid.current === requestingUid) router.push('/order-result/' + id);
+    } catch (reason) { if (currentUid.current === requestingUid) setError(explainError(reason)); }
+    finally { if (currentUid.current === requestingUid) { busyRef.current = false; setBusy(false); } }
+  }
+  const subtotal = cartSubtotal(state.cart, state.variants);
+  return <section className="page-width standard-page">
+    <PageHeading title={t('Review your demo order', 'మీ డెమో ఆర్డర్ చూడండి')}
+      description={t('Enter your address, review the example bill and confirm a simulated payment. No money is collected or delivery booked.', 'చిరునామా నమోదు చేసి, నమూనా బిల్లు చూసి చెల్లింపు అనుకరణ ధృవీకరించండి. డబ్బు తీసుకోబడదు, డెలివరీ బుక్ చేయబడదు.')} />
+    {!ready ? <DataStatus loading={t('Loading checkout…', 'చెక్అవుట్ లోడ్ అవుతోంది…')} />
+      : !uid ? <div className="sign-in-prompt"><UserNotice /><Link href="/sign-in?returnTo=/checkout" className="button primary">{t('Sign in to continue', 'కొనసాగించడానికి సైన్ ఇన్ చేయండి')}<ArrowRight size={18} /></Link></div>
+      : !accountReady || !catalogueReady || accountError || catalogueError ? <DataStatus error={accountError || catalogueError} loading={t('Loading your account and packs…', 'మీ ఖాతా, ప్యాక్‌లు లోడ్ అవుతున్నాయి…')} />
+      : !catalogueAvailable || (!state.cart.length && !currentBill) ? <EmptyState title={t('Choose your oil first', 'ముందు నూనె ఎంచుకోండి')} description={t('Add a demo pack to your cart before checkout.', 'చెక్అవుట్ ముందు కార్ట్‌లో డెమో ప్యాక్ జోడించండి.')} />
+      : <form className="checkout-layout" onSubmit={review}>
+        <div className="checkout-main">
+          <section className="form-section"><h2>{t('Delivery details', 'డెలివరీ వివరాలు')}</h2>
+            <fieldset disabled={busy}><AddressFields address={address} onChange={changeAddress} /></fieldset>
+            <p className="small-note">{t('Demo PIN: 517502. Your address is saved to your account and is available in the Android app.', 'డెమో పిన్: 517502. చిరునామా మీ ఖాతాలో సేవ్ అయి ఆండ్రాయిడ్ యాప్‌లో అందుబాటులో ఉంటుంది.')}</p>
+          </section>
+          <section className="form-section"><h2>{t('Demo payment', 'డెమో చెల్లింపు')}</h2>
+            <p>{t('Choose Confirm demo payment after reviewing the bill. This simulates completion and saves a receipt in this browser for your account.', 'బిల్లు చూసిన తర్వాత డెమో చెల్లింపు ధృవీకరించండి. పూర్తయినట్లు అనుకరణ చేసి మీ ఖాతా కోసం ఈ బ్రౌజర్‌లో రసీదు సేవ్ చేస్తుంది.')}</p>
+            <p className="small-note">{t('₹0 is collected. Your demo receipt stays in this browser; no shipment is created.', '₹0 తీసుకోబడుతుంది. డెమో రసీదు ఈ బ్రౌజర్‌లో ఉంటుంది; రవాణా సృష్టించబడదు.')}</p>
+          </section>
+          {error && <p className="error-text" role="alert">{error}</p>}
+          {currentBill && !billValid && !busy && <p className="error-text" role="status">{t('Your cart changed or the bill expired. Review a new bill before confirming.', 'కార్ట్ మారింది లేదా బిల్లు గడువు ముగిసింది. ధృవీకరణ ముందు కొత్త బిల్లు చూడండి.')}</p>}
+          {offline && <p className="error-text" role="status">{t('Reconnect to save your address and synchronize the cart.', 'చిరునామా సేవ్ చేయడానికి, కార్ట్ సింక్ కోసం కనెక్షన్ పునరుద్ధరించండి.')}</p>}
+        </div>
+        <aside className="order-summary"><h2>{t('Your demo bill', 'మీ డెమో బిల్లు')}</h2>
+          {(currentBill ? currentBill.lines : state.cart).map(line => {
+            const snapshot = currentBill?.lines.find(saved => saved.id === line.id);
+            const variant = state.variants.find(variant => variant.id === line.id);
+            return <div className="summary-row" key={line.id}><span>{snapshot?.litres ?? variant?.litres} L × {line.quantity}</span><strong>{money((snapshot?.unitPricePaise ?? variant?.pricePaise ?? 0) * line.quantity)}</strong></div>;
+          })}<hr />
+          <div className="summary-row"><span>{t('Products', 'ఉత్పత్తులు')}</span><strong>{money(currentBill?.subtotalPaise ?? subtotal)}</strong></div>
+          <div className="summary-row"><span>{t('Demo delivery', 'డెమో డెలివరీ')}</span><span>₹0</span></div>
+          <div className="summary-row total"><span>{t('Demo total', 'డెమో మొత్తం')}</span><strong>{money(currentBill?.totalPaise ?? subtotal)}</strong></div>
+          <p className="small-note">{t('Example prices. Stock and real delivery charges are unconfirmed.', 'నమూనా ధరలు. స్టాక్, అసలు డెలివరీ ఛార్జీలు నిర్ధారించాలి.')}</p>
+          {currentBill && billValid ? <button type="button" className="button primary full-width" disabled={busy || cartBusy || offline} onClick={() => void confirm()}>{busy ? t('Saving demo receipt…', 'డెమో రసీదు సేవ్ అవుతోంది…') : t('Confirm demo payment', 'డెమో చెల్లింపు ధృవీకరించండి')}<Check size={18} /></button>
+            : <button type="submit" className="button primary full-width" disabled={busy || cartBusy || offline || !state.cart.length}>{busy ? t('Reviewing bill…', 'బిల్లు చూస్తోంది…') : t('Review demo bill', 'డెమో బిల్లు చూడండి')}<ArrowRight size={18} /></button>}
+          <Link href="/cart" className="text-link">{t('Back to cart', 'కార్ట్‌కు తిరిగి వెళ్లండి')}</Link>
+        </aside>
+      </form>}
+  </section>;
+}
+
+function StandardCheckoutPage() {
   const { state, mode, ready, accountReady, accountError, catalogueReady, catalogueAvailable, catalogueError, settings, offline, cartBusy, t, quoteCheckout, placeOrder, explainError } = usePreview();
   const router = useRouter();
   const [address, setAddress] = useState<Address>(emptyAddress);

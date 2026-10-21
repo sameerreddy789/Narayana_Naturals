@@ -4,12 +4,52 @@ import { money, readPreview, type Address } from "../src/lib/demo";
 import { StoreError, errorCode, errorMessage, mergeCartEdit, mergeGuestCart, parseCart, parseOnboarding, parseOrder, parseQuote, parseSettings, parseVariant, removePurchasedLines, validateAddress } from "../src/lib/commerce";
 import { assertPreviewAllowed, resolveStoreConfiguration } from "../src/lib/store-config";
 import { activeCheckoutReview, canReplaceCheckoutReview, checkoutHasContent, checkoutStorageKey, parseCheckoutReview, readCheckoutReview, retainCheckoutAttempt, saveCheckoutReview, type CheckoutReview } from "../src/lib/checkout";
+import { assertDemoBillCurrent, cartQuantityLimit, demoReceiptKey, makeDemoBill, persistDemoReceipt, readDemoReceipts } from '../src/lib/demo-checkout';
 
 const address: Address = { name: "సమీర్ కుమార్", phone: "6000000001", street: "12, గాంధీ వీధి", city: "చిత్తూరు", pin: "517001" };
 const lines = [{ id: "1l", quantity: 2, litres: 1, unitPricePaise: 45050 }];
 const quote = { quoteId: "quote_abcdefgh", subtotalPaise: 90100, shippingPaise: 4000, totalPaise: 94100, codAllowed: true, estimate: "1–2 days", expiresAt: "2026-10-20T12:10:00.000Z", preview: true, lines };
 const order = { id: "order_abcdefgh", uid: "customer-a", customerPhone: "+916000000001", createdAt: "2026-10-20T12:00:00.000Z", lines, address, subtotalPaise: 90100, shippingPaise: 4000, totalPaise: 94100, paymentMethod: "cod", paymentStatus: "pending_collection", status: "received", channel: "web", preview: true };
 const isInvalid = (reason: unknown) => reason instanceof StoreError && ["INVALID_DATA", "INVALID_ADDRESS"].includes(reason.code);
+
+const draftAddress = { ...address, pin: '517502' };
+const draftVariants = [parseVariant('1l', { id: '1l', litres: 1, pricePaise: 45000, stock: 0, enabled: true, stockConfirmed: false, preview: true }),
+  parseVariant('2l', { id: '2l', litres: 2, pricePaise: 90000, stock: 0, enabled: true, stockConfirmed: false, preview: true }),
+  parseVariant('5l', { id: '5l', litres: 5, pricePaise: 225000, stock: 0, enabled: true, stockConfirmed: false, preview: true })];
+
+test('private demo bills calculate integer sample totals without declaring packed stock', () => {
+  const bill = makeDemoBill('demo-owner', draftAddress, [{ id: '1l', quantity: 2 }, { id: '2l', quantity: 1 }, { id: '5l', quantity: 1 }], draftVariants, 'bill-test-abcdefgh', 1000);
+  assert.equal(bill.subtotalPaise, 405000); assert.equal(bill.totalPaise, 405000); assert.equal(bill.shippingPaise, 0);
+  assert.equal(cartQuantityLimit(draftVariants[0], false), 0); assert.equal(cartQuantityLimit(draftVariants[0], true), 20);
+  assert.equal(draftVariants[0].stock, 0); assert.equal(draftVariants[0].stockConfirmed, false);
+});
+test('demo checkout rejects other PINs, expired bills, changed quantities/prices and accounts', () => {
+  assert.throws(() => makeDemoBill('demo-owner', address, [{ id: '1l', quantity: 1 }], draftVariants, 'bill-test-abcdefgh'), (error: unknown) => errorCode(error) === 'DEMO_PIN');
+  const cart = [{ id: '1l' as const, quantity: 1 }];
+  const bill = makeDemoBill('demo-owner', draftAddress, cart, draftVariants, 'bill-test-abcdefgh', 1000);
+  assert.throws(() => assertDemoBillCurrent(bill, 'different-owner', cart, draftVariants, 1100), (error: unknown) => errorCode(error) === 'ACCOUNT_CHANGED');
+  assert.throws(() => assertDemoBillCurrent(bill, 'demo-owner', cart, draftVariants, 601001), (error: unknown) => errorCode(error) === 'QUOTE_EXPIRED');
+  assert.throws(() => assertDemoBillCurrent(bill, 'demo-owner', [{ id: '1l', quantity: 2 }], draftVariants, 1100), (error: unknown) => errorCode(error) === 'QUOTE_CHANGED');
+  assert.throws(() => assertDemoBillCurrent(bill, 'demo-owner', cart, [{ ...draftVariants[0], pricePaise: 50000 }], 1100), (error: unknown) => errorCode(error) === 'QUOTE_CHANGED');
+});
+test('simulated receipts survive reload, deduplicate and stay in their own account storage', () => {
+  const memory = new Map<string,string>();
+  const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key,value); } };
+  const bill = makeDemoBill('demo-owner', draftAddress, [{ id: '1l', quantity: 1 }], draftVariants, 'bill-test-abcdefgh', 1000);
+  const first = persistDemoReceipt(storage, bill, 'demo-owner', 1100);
+  const retry = persistDemoReceipt(storage, bill, 'demo-owner', 1200);
+  assert.equal(first.created, true); assert.equal(retry.created, false); assert.equal(retry.receipt.id, first.receipt.id);
+  assert.equal(first.receipt.paymentStatus, 'simulated'); assert.equal(first.receipt.amountCollectedPaise, 0);
+  assert.equal(readDemoReceipts(storage.getItem(demoReceiptKey('demo-owner')), 'demo-owner').length, 1);
+  assert.equal(readDemoReceipts(storage.getItem(demoReceiptKey('demo-owner')), 'different-owner').length, 0);
+  assert.equal(storage.getItem(demoReceiptKey('different-owner')), null);
+  assert.equal(readDemoReceipts(JSON.stringify([{ ...first.receipt, paymentStatus: 'paid' }]), 'demo-owner').length, 0);
+});
+test('unavailable browser storage never reports a saved demo receipt', () => {
+  const bill = makeDemoBill('demo-owner', draftAddress, [{ id: '1l', quantity: 1 }], draftVariants, 'bill-test-abcdefgh', 1000);
+  const storage = { getItem: () => null, setItem: () => { throw new Error('Quota exceeded'); } };
+  assert.throws(() => persistDemoReceipt(storage, bill, 'demo-owner', 1100), (error: unknown) => errorCode(error) === 'LOCAL_STORAGE');
+});
 
 test("unconfigured builds use Firebase production and never silently create a local demo account", () => {
   const configuration = resolveStoreConfiguration();

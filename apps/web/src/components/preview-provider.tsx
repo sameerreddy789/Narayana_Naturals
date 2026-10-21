@@ -9,12 +9,14 @@ import { BrandLogo } from "./brand-logo";
 import { cartSubtotal, deliveryQuote, initialPreview, readPreview, type Address, type CartLine, type DemoOrder, type Language, type PackId, type PreviewState, type Variant } from "@/lib/demo";
 import { DEMO_PRODUCT, EMPTY_ONBOARDING, PACK_IDS, StoreError, errorMessage, mergeCartEdit, mergeGuestCart, removePurchasedLines, parseCart, parseOnboarding, parseOrder, parseProduct, parseQuote, parseSettings, parseVariant, validateAddress, type CheckoutQuote, type DeliveryCheck, type Onboarding, type Product, type StorefrontSettings } from "@/lib/commerce";
 import { assertCurrentStoreRecord, backendMode, commerceApi, commerceRoot, databaseRecords, getFirebaseServices, getServerValue, privateDraft, waitDatabaseConnection, type BackendMode } from "@/lib/firebase";
+import { assertDemoBillCurrent, cartQuantityLimit, demoReceiptKey, makeDemoBill, persistDemoReceipt, readDemoReceipts, type DemoBill, type LocalDemoReceipt } from "@/lib/demo-checkout";
 
 const DEMO_STORAGE_KEY = "narayana-naturals-preview-v2";
 const GUEST_STORAGE_KEY = "narayana-naturals-web-guest-v1";
 type Toast = { message: string; error: boolean };
 type Context = {
   state: PreviewState;
+  demoReceipts: LocalDemoReceipt[];
   mode: BackendMode;
   ready: boolean;
   accountReady: boolean;
@@ -45,6 +47,8 @@ type Context = {
   skipGuide: () => Promise<void>;
   replayGuide: () => Promise<void>;
   saveAddress: (address: Address) => Promise<void>;
+  quoteDemoCheckout: (address: Address) => Promise<DemoBill>;
+  confirmDemoPayment: (bill: DemoBill) => Promise<string>;
   updateVariant: (variant: Variant) => Promise<void>;
   updateOrder: (id: string, status: DemoOrder["status"]) => Promise<void>;
   checkDelivery: (pin: string, lines: CartLine[]) => Promise<DeliveryCheck>;
@@ -87,6 +91,7 @@ function parseStoreOrder(id: string, data: unknown): DemoOrder | null {
 export function PreviewProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState(newState);
   const stateRef = useRef(state);
+  const [demoReceipts, setDemoReceipts] = useState<LocalDemoReceipt[]>([]);
   const [ready, setReady] = useState(false);
   const [accountReady, setAccountReady] = useState(backendMode === "demo");
   const accountReadyRef = useRef(backendMode === "demo");
@@ -165,7 +170,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
     markAccountReady(false);
     setAccountIssue(undefined);
     setOrdersIssue(undefined);
-    setOrdersReady(false);
+    setOrdersReady(privateDraft);
     const { db } = getFirebaseServices();
     const profileRef = ref(db, `users/${user.uid}/profile`);
     const addressRef = ref(db, `users/${user.uid}/addresses/default`);
@@ -212,6 +217,10 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
       // Clear the anonymous cart only after the server has acknowledged its merge.
       if (JSON.stringify(guestCart.current) === JSON.stringify(guest)) { guestCart.current = []; persistGuest(); }
       applyOnboarding(user.uid, progress);
+      if (privateDraft) {
+        try { setDemoReceipts(readDemoReceipts(localStorage.getItem(demoReceiptKey(user.uid)), user.uid)); }
+        catch { setDemoReceipts([]); }
+      }
       markAccountReady(true);
       pendingName.current = "";
 
@@ -230,7 +239,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         watch(addressRef, data => data ? validateAddress(data as Address) : undefined, address => commit(current => ({ ...current, addresses: address ? { [user.uid]: address } : {} }))),
         watch(onboardingRef, parseOnboarding, progress => applyOnboarding(user.uid, progress)),
         watch(cartRef, parseCart, lines => commit(current => ({ ...current, cart: lines }))),
-        onValue(query(ref(db, `${commerceRoot}/ordersByUser/${user.uid}`), orderByChild("createdAt"), limitToLast(50)), snapshot => {
+        ...(!privateDraft ? [onValue(query(ref(db, `${commerceRoot}/ordersByUser/${user.uid}`), orderByChild("createdAt"), limitToLast(50)), snapshot => {
           if (!sameAccount(user.uid, scope)) return;
           try {
             const orders = databaseRecords(snapshot).map(entry => parseStoreOrder(entry.id, entry.data())).filter((order): order is DemoOrder => !!order).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
@@ -244,7 +253,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
             setOrdersIssue(privateDraft && (code === "PERMISSION_DENIED" || code === "permission-denied") ? new StoreError("TESTER_REQUIRED") : reason);
             setOrdersReady(true);
           }
-        }),
+        })] : []),
       ];
     } catch (reason) {
       if (sameAccount(user.uid, scope)) { setAccountIssue(reason); setOrdersReady(true); }
@@ -312,6 +321,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           const switched = authUser.current?.uid !== user?.uid || !user;
           if (switched) {
             generation.current += 1; stopAccount(); ownerSubscription.current?.(); ownerSubscription.current = null;
+            setDemoReceipts([]);
             authUser.current = user; markAccountReady(!user); setAccountIssue(undefined); setOrdersIssue(undefined); setOwnerIssue(undefined);
             setOrdersReady(!user); setOwnerOrdersReady(!user); setOwnerOrders([]);
             commit(current => ({ ...current, user: user ? { uid: user.uid, name: user.displayName ?? "", phone: "", email: user.email ?? "", admin: false } : null,
@@ -352,6 +362,14 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = state.language;
     document.body.dataset.language = state.language;
   }, [ready, state, persistGuest]);
+  useEffect(() => {
+    if (!privateDraft || !uid) return;
+    const refresh = (event: StorageEvent) => {
+      if (event.key === demoReceiptKey(uid)) setDemoReceipts(readDemoReceipts(event.newValue, uid));
+    };
+    window.addEventListener('storage', refresh);
+    return () => window.removeEventListener('storage', refresh);
+  }, [uid]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), toast.error ? 7500 : 4500);
@@ -438,6 +456,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
 
   const value: Context = {
     state, mode: backendMode, ready, accountReady, catalogueReady, ordersReady, ownerOrdersReady,
+    demoReceipts: demoReceipts.filter(receipt => receipt.uid === uid),
     ownerOrders: backendMode === "demo" ? state.orders : ownerOrders,
     catalogueAvailable: !!product && state.variants.length > 0 && Object.keys(catalogueIssues).length === 0,
     cartBusy: cartBusy || placing, guideBusy, offline, product, settings, t, explainError, notify, watchOrder,
@@ -463,7 +482,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         await mutateCart(lines => {
           const variant = stateRef.current.variants.find(variant => variant.id === id);
           const count = (lines.find(line => line.id === id)?.quantity ?? 0) + quantity;
-          if (!variant?.enabled || (privateDraft && variant.stockConfirmed === false) || !Number.isInteger(quantity) || quantity < 1 || count > Math.min(variant.stock, 20)) throw new StoreError("OUT_OF_STOCK");
+          if (!Number.isInteger(quantity) || quantity < 1 || count > cartQuantityLimit(variant, privateDraft)) throw new StoreError("OUT_OF_STOCK");
           return PACK_IDS.flatMap(pack => pack === id ? [{ id, quantity: count }] : lines.filter(line => line.id === pack));
         });
         notify(t("Added to your cart", "కార్ట్‌లో చేర్చబడింది")); return true;
@@ -474,7 +493,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         await mutateCart(lines => {
           const existing = lines.find(line => line.id === id)?.quantity ?? 0;
           const variant = stateRef.current.variants.find(variant => variant.id === id);
-          if (!Number.isInteger(quantity) || quantity < 0 || quantity > 20 || (quantity >= existing && quantity > 0 && (!variant?.enabled || quantity > variant.stock))) throw new StoreError("OUT_OF_STOCK");
+          if (!Number.isInteger(quantity) || quantity < 0 || quantity > 20 || (quantity >= existing && quantity > 0 && quantity > cartQuantityLimit(variant, privateDraft))) throw new StoreError("OUT_OF_STOCK");
           return quantity === 0 ? lines.filter(line => line.id !== id) : lines.map(line => line.id === id ? { id, quantity } : line);
         });
       } catch (reason) { notify(explainError(reason), true); }
@@ -529,6 +548,54 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
       }
       commit(current => ({ ...current, addresses: { ...current.addresses, [user.uid]: valid } }));
       notify(backendMode === "demo" ? t("Sample address saved", "నమూనా చిరునామా సేవ్ చేయబడింది") : t("Address saved", "చిరునామా సేవ్ చేయబడింది"));
+    },
+    quoteDemoCheckout: async address => {
+      if (!privateDraft || backendMode !== 'firebase' || !product || !catalogueReady) throw new StoreError('STORE_NOT_READY');
+      const { user, scope } = assertAccount();
+      requireOnline();
+      const lines = await deadline(queueCart(async () => parseCart((await getServerValue(ref(getFirebaseServices().db, `carts/${user.uid}`))).val())));
+      if (!sameAccount(user.uid, scope)) throw new StoreError('ACCOUNT_CHANGED');
+      return makeDemoBill(user.uid, address, lines, stateRef.current.variants, crypto.randomUUID());
+    },
+    confirmDemoPayment: async bill => {
+      if (!privateDraft || backendMode !== 'firebase' || !product) throw new StoreError('STORE_NOT_READY');
+      if (placingRef.current) throw new StoreError('CHECKOUT_BUSY');
+      const { user, scope } = assertAccount();
+      if (bill.uid !== user.uid) throw new StoreError('ACCOUNT_CHANGED');
+      placingRef.current = true; setPlacing(true);
+      try {
+        let existing: LocalDemoReceipt | undefined;
+        try { existing = readDemoReceipts(localStorage.getItem(demoReceiptKey(user.uid)), user.uid).find(receipt => receipt.id === `NN-DEMO-${bill.quoteId}`); }
+        catch { throw new StoreError('LOCAL_STORAGE'); }
+        if (!existing) {
+          requireOnline();
+          const lines = await deadline(queueCart(async () => parseCart((await getServerValue(ref(getFirebaseServices().db, `carts/${user.uid}`))).val())));
+          if (!sameAccount(user.uid, scope)) throw new StoreError('ACCOUNT_CHANGED');
+          assertDemoBillCurrent(bill, user.uid, lines, stateRef.current.variants);
+        }
+        const saved = persistDemoReceipt(localStorage, bill, user.uid);
+        if (!sameAccount(user.uid, scope)) throw new StoreError('ACCOUNT_CHANGED');
+        setDemoReceipts(readDemoReceipts(localStorage.getItem(demoReceiptKey(user.uid)), user.uid));
+        if (saved.created) {
+          try {
+            const remaining = await deadline(queueCart(async () => {
+              if (!sameAccount(user.uid, scope)) throw new StoreError('ACCOUNT_CHANGED');
+              await waitDatabaseConnection();
+              const result = await runTransaction(ref(getFirebaseServices().db, `carts/${user.uid}`), raw => {
+                if (!sameAccount(user.uid, scope)) throw new StoreError('ACCOUNT_CHANGED');
+                return { lines: removePurchasedLines(parseCart(raw), bill.lines), updatedAt: serverTimestamp() };
+              }, { applyLocally: false });
+              if (!result.committed) throw new StoreError('unavailable');
+              return parseCart(result.snapshot.val());
+            }));
+            if (sameAccount(user.uid, scope)) commit(current => ({ ...current, cart: remaining }));
+          } catch {
+            if (sameAccount(user.uid, scope)) notify(t('Demo receipt saved. Your cart could not synchronize; review it before another demo.', 'డెమో రసీదు సేవ్ అయింది. కార్ట్ సేవ్ కాలేదు; మరో డెమో ముందు సరిచూడండి.'), true);
+          }
+        }
+        if (!sameAccount(user.uid, scope)) throw new StoreError('ACCOUNT_CHANGED');
+        return saved.receipt.id;
+      } finally { placingRef.current = false; setPlacing(false); }
     },
     updateVariant: async variant => {
       if (backendMode !== "demo") assertAccount(true);

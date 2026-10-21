@@ -26,5 +26,5 @@ export function ConnectionBanner() {
 export function PrivateDraftBanner() {
   const { t } = usePreview();
   if (!privateDraft) return null;
-  return <div className="demo-banner private-draft-banner">{t("Private demonstration · Example prices: 1 L ₹450, 2 L ₹900, 5 L ₹2,250 · No orders, payments or delivery", "ప్రైవేట్ ప్రదర్శన · నమూనా ధరలు: 1 L ₹450, 2 L ₹900, 5 L ₹2,250 · ఆర్డర్లు, చెల్లింపులు, డెలివరీ లేవు")}</div>;
+  return <div className="demo-banner private-draft-banner">{t("Private demo · Example prices · Simulated payment only · No money collected or delivery booked", "ప్రైవేట్ డెమో · నమూనా ధరలు · చెల్లింపు అనుకరణ మాత్రమే · డబ్బు తీసుకోబడదు, డెలివరీ బుక్ చేయబడదు")}</div>;
 }

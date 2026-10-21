@@ -50,6 +50,10 @@ class AppFailure implements Exception {
 }
 
 const _messages = <String, List<String>>{
+  'DEMO_PIN': [
+    'Use PIN 517502 for this demonstration. No real delivery is booked.',
+    'ఈ ప్రదర్శనకు పిన్ 517502 ఉపయోగించండి. నిజమైన డెలివరీ బుక్ చేయబడదు.',
+  ],
   'AUTH_REQUIRED': [
     'Sign in with your email to continue.',
     'కొనసాగడానికి మీ ఈమెయిల్‌తో సైన్ ఇన్ చేయండి.',

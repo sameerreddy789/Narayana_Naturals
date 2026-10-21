@@ -87,6 +87,26 @@ class MobileFixture {
   final AppController controller;
   final TestingBackend backend;
   final LocalStore store;
+  static Future<MobileFixture> privateDraft({LocalStore? savedStore}) async {
+    if (savedStore == null) SharedPreferences.setMockInitialValues({});
+    final store =
+        savedStore ??
+        LocalStore(
+          await SharedPreferences.getInstance(),
+          BackendMode.firebase,
+          storeStage: 'private-draft',
+        );
+    final backend = PrivateDraftTestingBackend(store);
+    if (backend.currentUser == null) {
+      await backend.signInEmail(customerEmail, previewPassword);
+    }
+    final controller = AppController(backend, store);
+    await controller.start();
+    await until(() => controller.accountReady && controller.catalogue != null);
+    await flushEvents();
+    return MobileFixture(controller, backend, store);
+  }
+
   static Future<MobileFixture> create({bool signedIn = true}) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
@@ -125,6 +145,16 @@ class FailingLiveBackend extends TestingBackend {
 
 class PrivateDraftTestingBackend extends TestingBackend {
   PrivateDraftTestingBackend(super.store);
+  int quoteCalls = 0;
+  @override
+  Future<CheckoutQuote> quote(
+    List<CartLine> lines,
+    DeliveryAddress address,
+  ) async {
+    quoteCalls++;
+    throw StateError('The private simulated bill must not call the order API');
+  }
+
   @override
   BackendMode get mode => BackendMode.firebase;
   @override

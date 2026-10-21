@@ -131,8 +131,12 @@ class HomePage extends StatelessWidget {
           title: Text(context.tr('Buying again?', 'మళ్లీ కొనాలనుకుంటున్నారా?')),
           subtitle: Text(
             context.tr(
-              'Your website and app orders share one email account.',
-              'వెబ్‌సైట్, యాప్ ఆర్డర్‌లు ఒకే ఈమెయిల్ ఖాతాలో ఉంటాయి.',
+              app.privateDraft
+                  ? 'Find your demo receipts on this phone. Your cart and address sync with the website.'
+                  : 'Your website and app orders share one email account.',
+              app.privateDraft
+                  ? 'మీ డెమో రసీదులు ఈ ఫోన్‌లో చూడండి. మీ కార్ట్ మరియు చిరునామా వెబ్‌సైట్‌తో కలిసి ఉంటాయి.'
+                  : 'వెబ్‌సైట్, యాప్ ఆర్డర్‌లు ఒకే ఈమెయిల్ ఖాతాలో ఉంటాయి.',
             ),
           ),
           trailing: const Icon(Icons.arrow_forward),
@@ -236,7 +240,10 @@ class _PackRow extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       app.privateDraft && !variant.stockConfirmed
-                          ? context.tr('Stock pending', 'స్టాక్ నిర్ధారించాలి')
+                          ? context.tr(
+                              'Demo pack · Stock unconfirmed',
+                              'డెమో ప్యాక్ · స్టాక్ నిర్ధారించాలి',
+                            )
                           : variant.available
                           ? context.tr('Available', 'అందుబాటులో ఉంది')
                           : context.tr('Unavailable', 'అందుబాటులో లేదు'),
@@ -266,13 +273,13 @@ class _PackRow extends StatelessWidget {
                 QuantityStepper(
                   id: variant.id,
                   quantity: count,
-                  maximum: variant.quantityLimit,
+                  maximum: app.cartLimit(variant),
                   enabled: app.canEditCart,
                 )
               else
                 FilledButton.icon(
                   key: ValueKey('add_${variant.id}'),
-                  onPressed: variant.available && app.canEditCart
+                  onPressed: app.cartAvailable(variant) && app.canEditCart
                       ? () => unawaited(
                           perform(
                             context,
@@ -370,7 +377,10 @@ class _ProductPageState extends State<ProductPage> {
               ),
               Text(
                 app.privateDraft && !variant.stockConfirmed
-                    ? context.tr('Stock pending', 'స్టాక్ నిర్ధారించాలి')
+                    ? context.tr(
+                        'Demo pack · Stock unconfirmed',
+                        'డెమో ప్యాక్ · స్టాక్ నిర్ధారించాలి',
+                      )
                     : variant.available
                     ? context.tr(
                         'Available · Delivery checked at checkout',
@@ -388,7 +398,7 @@ class _ProductPageState extends State<ProductPage> {
                   child: QuantityStepper(
                     id: selected,
                     quantity: app.quantity(selected),
-                    maximum: variant.quantityLimit,
+                    maximum: app.cartLimit(variant),
                     enabled: app.canEditCart,
                   ),
                 ),
@@ -401,9 +411,9 @@ class _ProductPageState extends State<ProductPage> {
                 busy: busy,
                 icon: Icons.add_shopping_cart_outlined,
                 onPressed:
-                    variant.available &&
+                    app.cartAvailable(variant) &&
                         app.canEditCart &&
-                        app.quantity(selected) < variant.quantityLimit
+                        app.quantity(selected) < app.cartLimit(variant)
                     ? () async {
                         setState(() => busy = true);
                         await perform(

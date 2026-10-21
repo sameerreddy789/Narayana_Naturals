@@ -53,4 +53,52 @@ class LocalStore {
 
   Future<void> savePending(String uid, PendingCheckout? pending) =>
       write('checkout_$uid', pending?.toJson());
+
+  List<OrderRecord> demoReceiptsFor(String uid) {
+    final raw = read('demo-receipts_$uid');
+    if (storeStage != 'private-draft' || raw is! List) return [];
+    final unique = <String, OrderRecord>{};
+    for (final value in raw) {
+      final receipt = OrderRecord.fromJson(value);
+      if (receipt.uid != uid ||
+          !receipt.localDemo ||
+          !receipt.id.startsWith('NN-DEMO-') ||
+          receipt.paymentStatus != 'simulated' ||
+          !receipt.address.valid ||
+          receipt.address.pin != '517502' ||
+          receipt.lines.isEmpty ||
+          receipt.shippingPaise != 0 ||
+          receipt.totalPaise != receipt.subtotalPaise ||
+          receipt.subtotalPaise !=
+              receipt.lines.fold(0, (sum, line) => sum + line.totalPaise) ||
+          receipt.lines.any(
+            (line) =>
+                !variantIds.contains(line.id) ||
+                line.quantity < 1 ||
+                line.quantity > 20 ||
+                line.unitPricePaise <= 0,
+          )) {
+        continue;
+      }
+      unique.putIfAbsent(receipt.id, () => receipt);
+    }
+    return unique.values.take(50).toList();
+  }
+
+  Future<OrderRecord> saveDemoReceipt(String uid, OrderRecord receipt) async {
+    if (storeStage != 'private-draft' ||
+        receipt.uid != uid ||
+        !receipt.localDemo) {
+      throw const AppFailure('AUTH_REQUIRED');
+    }
+    final receipts = demoReceiptsFor(uid);
+    for (final saved in receipts) {
+      if (saved.id == receipt.id) return saved;
+    }
+    await write(
+      'demo-receipts_$uid',
+      [receipt, ...receipts].take(50).map((entry) => entry.toJson()).toList(),
+    );
+    return receipt;
+  }
 }

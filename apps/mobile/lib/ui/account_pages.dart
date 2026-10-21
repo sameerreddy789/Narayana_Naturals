@@ -56,8 +56,12 @@ class AccountPage extends StatelessWidget {
               'తదుపరి ఆర్డర్‌ను సులభం చేయండి',
             ),
             body: context.tr(
-              'Sign in to keep your cart, address and order history with your email account.',
-              'కార్ట్, చిరునామా, ఆర్డర్ చరిత్రను మీ ఈమెయిల్ ఖాతాలో ఉంచడానికి సైన్ ఇన్ చేయండి.',
+              app.privateDraft
+                  ? 'Sign in to sync your cart and saved address. Demo receipts stay on this phone.'
+                  : 'Sign in to keep your cart, address and order history with your email account.',
+              app.privateDraft
+                  ? 'కార్ట్ మరియు సేవ్ చేసిన చిరునామా రెండింటిలో చూడడానికి సైన్ ఇన్ చేయండి. డెమో రసీదులు ఈ ఫోన్‌లోనే ఉంటాయి.'
+                  : 'కార్ట్, చిరునామా, ఆర్డర్ చరిత్రను మీ ఈమెయిల్ ఖాతాలో ఉంచడానికి సైన్ ఇన్ చేయండి.',
             ),
             action: FilledButton(
               onPressed: onSignIn,
@@ -372,8 +376,12 @@ class InfoPage extends StatelessWidget {
         _InfoParagraph(
           title: context.tr('Payment', 'చెల్లింపు'),
           body: context.tr(
-            'Cash on delivery is the available checkout method for eligible PIN codes. The app shows the full amount before order confirmation.',
-            'అర్హత ఉన్న పిన్‌లకు డెలివరీ సమయంలో నగదు చెల్లింపు అందుబాటులో ఉంది. ఆర్డర్ ధృవీకరణకు ముందు యాప్ పూర్తి మొత్తాన్ని చూపుతుంది.',
+            context.app.privateDraft
+                ? 'Enter your address with PIN 517502, review the example bill and choose Confirm demo payment. No money is collected, no delivery is booked, and the receipt stays on this device.'
+                : 'Cash on delivery is the available checkout method for eligible PIN codes. The app shows the full amount before order confirmation.',
+            context.app.privateDraft
+                ? 'పిన్ 517502తో చిరునామా నమోదు చేసి, నమూనా బిల్లు చూసి డెమో చెల్లింపు ధృవీకరించండి. డబ్బు తీసుకోబడదు, డెలివరీ బుక్ కాలేదు, రసీదు ఈ పరికరంలో ఉంటుంది.'
+                : 'అర్హత ఉన్న పిన్‌లకు డెలివరీ సమయంలో నగదు చెల్లింపు అందుబాటులో ఉంది. ఆర్డర్ ధృవీకరణకు ముందు యాప్ పూర్తి మొత్తాన్ని చూపుతుంది.',
           ),
         ),
         _InfoParagraph(

@@ -47,6 +47,14 @@ Do not invent extraction temperatures, organic certification, medical benefits, 
 
 ## Capabilities and Constraints
 
+Current private client demonstration (21 October 2026): real Firebase email
+accounts, addresses and carts work on both clients. At the owner's request,
+checkout collects an address for PIN 517502, shows labelled example prices
+and a ₹0 demo delivery fee, then confirms a simulated payment. It collects no
+money, offers no COD, creates no backend order and reserves no physical stock.
+Receipts stay locally on the browser/Android installation, isolated by UID.
+Production order sharing remains the intended behavior after merchant activation.
+
 Requirements carried forward from the brief:
 
 - Catalogue, product facts, pack selection, cart, quantity changes, and checkout.

@@ -409,6 +409,7 @@ class CheckoutQuote {
   final DateTime expiresAt;
   final bool preview;
   final List<OrderLine> lines;
+  bool get localDemo => preview && quoteId.startsWith('demo_quote_');
   bool get expired => !DateTime.now().isBefore(expiresAt);
   Map<String, Object> toJson() => {
     'quoteId': quoteId,
@@ -437,6 +438,7 @@ class OrderRecord {
     required this.paymentStatus,
     required this.channel,
     required this.preview,
+    this.paymentMethod = 'cod',
   });
   factory OrderRecord.fromJson(Object? value) {
     final data = stringMap(value);
@@ -455,6 +457,7 @@ class OrderRecord {
       paymentStatus: data['paymentStatus']?.toString() ?? 'pending_collection',
       channel: data['channel']?.toString() ?? 'android',
       preview: data['preview'] == true,
+      paymentMethod: data['paymentMethod']?.toString() ?? 'cod',
     );
   }
   final String id;
@@ -469,6 +472,9 @@ class OrderRecord {
   final String paymentStatus;
   final String channel;
   final bool preview;
+  final String paymentMethod;
+  bool get localDemo =>
+      preview && paymentMethod == 'demo' && status == 'demo_completed';
   Map<String, Object> toJson() => {
     'id': id,
     'uid': uid,
@@ -480,7 +486,7 @@ class OrderRecord {
     'shippingPaise': shippingPaise,
     'totalPaise': totalPaise,
     'status': status,
-    'paymentMethod': 'cod',
+    'paymentMethod': paymentMethod,
     'paymentStatus': paymentStatus,
     'channel': channel,
     'preview': preview,

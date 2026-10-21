@@ -3,14 +3,18 @@
 A bilingual Next.js website, Flutter Android customer app and shared Firebase
 Realtime Database backend for Narayana Naturals bull-driven wooden Ghani
 groundnut oil. Customers use the same email account, catalogue, cart, default
-delivery address and order history on both connected clients. The web owner
+delivery address on both connected clients. Production order history uses the
+shared backend; the current demonstration saves receipts on each device. The web owner
 dashboard updates pack prices, available stock and order status.
 
 The current **private client draft** uses the hosted website at
 https://narayana-naturals.onrender.com and API at
 https://narayana-naturals-api.onrender.com. It shows labelled example prices,
-pending stock and only PIN **517502**, with COD, payments and order submission
-disabled. See [the APK sharing and live setup guide](docs/LIVE-DRAFT-APK.md).
+pending stock and only PIN **517502**. Customers can add demo packs, enter an
+address, review the example bill and choose **Confirm demo payment**. No money
+is collected, no COD is offered and no shipment is booked. Demo receipts are
+stored locally per account; Firebase continues to synchronize accounts,
+addresses and carts. See [the APK sharing and live setup guide](docs/LIVE-DRAFT-APK.md).
 
 The production purchase implementation supports **cash on delivery for eligible PIN codes**.
 The user's selected stack avoids Firebase billing: email/password Authentication,

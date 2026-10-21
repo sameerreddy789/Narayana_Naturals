@@ -7,6 +7,7 @@ import '../domain/models.dart';
 import 'widgets.dart';
 
 String orderStatus(BuildContext context, String status) => switch (status) {
+  'demo_completed' => context.tr('Demo completed', 'డెమో పూర్తయింది'),
   'packed' => context.tr('Packed', 'ప్యాక్ అయింది'),
   'shipped' => context.tr('Shipped', 'పంపించబడింది'),
   'delivered' => context.tr('Delivered', 'డెలివరీ అయింది'),
@@ -135,7 +136,7 @@ class CartPage extends StatelessWidget {
               app.signedIn ? 'డెలివరీ, మొత్తం' : 'సైన్ ఇన్ చేసి ఆర్డర్ చేయండి',
             ),
             onPressed:
-                app.orderingAvailable &&
+                app.checkoutAvailable &&
                     (!app.signedIn || app.accountReady) &&
                     app.pending?.orderId == null
                 ? onCheckout
@@ -191,8 +192,8 @@ class _CartRow extends StatelessWidget {
                           : '${app.privateDraft ? '${context.tr('Example price', 'నమూనా ధర')} · ' : ''}${money(variant.pricePaise)} × ${line.quantity}',
                     ),
                     if (variant != null &&
-                        (!variant.available ||
-                            line.quantity > variant.stock)) ...[
+                        (!app.cartAvailable(variant) ||
+                            line.quantity > app.cartLimit(variant))) ...[
                       const SizedBox(height: 8),
                       Text(
                         app.privateDraft && !variant.stockConfirmed
@@ -224,7 +225,7 @@ class _CartRow extends StatelessWidget {
               QuantityStepper(
                 id: line.id,
                 quantity: line.quantity,
-                maximum: variant?.quantityLimit ?? line.quantity,
+                maximum: app.cartLimit(variant),
                 enabled: app.canEditCart,
               ),
               TextButton(
@@ -346,7 +347,21 @@ class OrdersPage extends StatelessWidget {
     final app = context.app;
     return PageBody(
       children: [
-        PageTitle(context.tr('Your orders', 'మీ ఆర్డర్‌లు')),
+        PageTitle(
+          app.privateDraft
+              ? context.tr('Your demo receipts', 'మీ డెమో రసీదులు')
+              : context.tr('Your orders', 'మీ ఆర్డర్‌లు'),
+        ),
+        if (app.privateDraft)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Text(
+              context.tr(
+                'Demo receipts stay on this device for your account. No money is collected and no delivery is booked.',
+                'డెమో రసీదులు మీ ఖాతా కోసం ఈ పరికరంలో ఉంటాయి. డబ్బు తీసుకోబడదు, డెలివరీ బుక్ చేయబడదు.',
+              ),
+            ),
+          ),
         GuideCard(
           page: 'orders',
           title: context.tr(
@@ -366,8 +381,12 @@ class OrdersPage extends StatelessWidget {
               'మీ ఆర్డర్‌ల కోసం సైన్ ఇన్ చేయండి',
             ),
             body: context.tr(
-              'Use the same email on the website and app to find all your orders.',
-              'అన్ని ఆర్డర్‌ల కోసం వెబ్‌సైట్, యాప్‌లో ఒకే ఫోన్ ఉపయోగించండి.',
+              app.privateDraft
+                  ? 'Sign in to see demo receipts saved on this device.'
+                  : 'Use the same email on the website and app to find all your orders.',
+              app.privateDraft
+                  ? 'ఈ పరికరంలో సేవ్ చేసిన డెమో రసీదుల కోసం సైన్ ఇన్ చేయండి.'
+                  : 'అన్ని ఆర్డర్‌ల కోసం వెబ్‌సైట్, యాప్‌లో ఒకే ఈమెయిల్ ఉపయోగించండి.',
             ),
             action: FilledButton(
               onPressed: onSignIn,
@@ -394,8 +413,12 @@ class OrdersPage extends StatelessWidget {
               'మీ మొదటి ఆర్డర్ ఇక్కడ ప్రారంభమవుతుంది',
             ),
             body: context.tr(
-              'Choose a pack and review delivery. Confirmed orders will appear here.',
-              'ప్యాక్ ఎంచుకుని డెలివరీ సమీక్షించండి. ధృవీకరించిన ఆర్డర్‌లు ఇక్కడ కనిపిస్తాయి.',
+              app.privateDraft
+                  ? 'Add a pack, enter your address and confirm a demo payment. Your receipt will appear here.'
+                  : 'Choose a pack and review delivery. Confirmed orders will appear here.',
+              app.privateDraft
+                  ? 'ప్యాక్ జోడించి, చిరునామా నమోదు చేసి డెమో చెల్లింపు ధృవీకరించండి. రసీదు ఇక్కడ కనిపిస్తుంది.'
+                  : 'ప్యాక్ ఎంచుకుని డెలివరీ సమీక్షించండి. ధృవీకరించిన ఆర్డర్‌లు ఇక్కడ కనిపిస్తాయి.',
             ),
             action: FilledButton(
               onPressed: onShop,
@@ -523,8 +546,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                       if (order.preview)
                         Text(
                           context.tr(
-                            'Preview order · No payment or delivery will occur.',
-                            'ప్రివ్యూ ఆర్డర్ · చెల్లింపు లేదా డెలివరీ జరగదు.',
+                            order.localDemo
+                                ? 'Demo receipt · Saved on this device. No money collected or delivery booked.'
+                                : 'Preview order · No payment or delivery will occur.',
+                            order.localDemo
+                                ? 'డెమో రసీదు · ఈ పరికరంలో సేవ్ అయింది. డబ్బు తీసుకోబడలేదు, డెలివరీ బుక్ కాలేదు.'
+                                : 'ప్రివ్యూ ఆర్డర్ · చెల్లింపు లేదా డెలివరీ జరగదు.',
                           ),
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
@@ -548,7 +575,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         money(order.subtotalPaise),
                       ),
                       TotalRow(
-                        context.tr('Delivery', 'డెలివరీ'),
+                        context.tr(
+                          order.localDemo ? 'Demo delivery' : 'Delivery',
+                          order.localDemo ? 'డెమో డెలివరీ' : 'డెలివరీ',
+                        ),
                         money(order.shippingPaise),
                       ),
                       TotalRow(
@@ -558,6 +588,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                       ),
                       const SizedBox(height: 12),
                       Text(switch (order.paymentStatus) {
+                        'simulated' => context.tr(
+                          'Payment simulated · ₹0 collected',
+                          'చెల్లింపు అనుకరణ · ₹0 తీసుకోబడింది',
+                        ),
                         'collected' => context.tr(
                           'Cash on delivery · Collected',
                           'డెలివరీ సమయంలో నగదు · తీసుకున్నారు',
@@ -582,11 +616,25 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                       Text('+91 ${order.address.phone}'),
                       const SizedBox(height: 28),
                       Text(
-                        context.tr('Order progress', 'ఆర్డర్ పురోగతి'),
+                        context.tr(
+                          order.localDemo
+                              ? 'Demonstration complete'
+                              : 'Order progress',
+                          order.localDemo
+                              ? 'ప్రదర్శన పూర్తయింది'
+                              : 'ఆర్డర్ పురోగతి',
+                        ),
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 12),
-                      if (order.status == 'cancelled')
+                      if (order.localDemo)
+                        Text(
+                          context.tr(
+                            'Your address and bill are saved in this demo receipt. No fulfilment will take place.',
+                            'మీ చిరునామా, బిల్లు ఈ డెమో రసీదులో సేవ్ అయ్యాయి. డెలివరీ జరగదు.',
+                          ),
+                        )
+                      else if (order.status == 'cancelled')
                         Text(
                           context.tr(
                             'The store cancelled this order.',

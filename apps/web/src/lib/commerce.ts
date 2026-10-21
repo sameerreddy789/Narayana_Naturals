@@ -116,6 +116,8 @@ export function errorCode(error: unknown): string {
 }
 export function errorMessage(error: unknown, t: (en: string, te: string) => string): string {
   const messages: Record<string, [string, string]> = {
+    DEMO_PIN: ["Use PIN 517502 for this demonstration. No real delivery is booked.", "ఈ ప్రదర్శనకు పిన్ 517502 ఉపయోగించండి. నిజమైన డెలివరీ బుక్ చేయబడదు."],
+    LOCAL_STORAGE: ["The demo receipt could not be saved in this browser. Enable browser storage or free some space, then retry.", "ఈ బ్రౌజర్‌లో డెమో రసీదు సేవ్ కాలేదు. బ్రౌజర్ నిల్వను అనుమతించండి లేదా స్థలం ఖాళీ చేసి మళ్లీ ప్రయత్నించండి."],
     AUTH_REQUIRED: ["Sign in before continuing.", "కొనసాగించే ముందు సైన్ ఇన్ చేయండి."],
     unauthenticated: ["This request could not be verified. Sign in again or contact the business.", "ఈ అభ్యర్థన ధృవీకరించబడలేదు. మళ్లీ సైన్ ఇన్ చేయండి లేదా వ్యాపారాన్ని సంప్రదించండి."],
     ADMIN_REQUIRED: ["This account does not have owner access.", "ఈ ఖాతాకు యజమాని అనుమతి లేదు."],

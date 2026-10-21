@@ -12,7 +12,20 @@ The owner approved example prices of ₹450, ₹900 and ₹2,250 for the 1 L,
 is pending confirmation. The only demonstration delivery PIN is **517502**;
 delivery charges and delivery estimates remain pending.
 
-**Order submission, COD, online payments and fulfilment are disabled.**
+**A client-only demonstration checkout is enabled.** Add packs, enter an
+address with PIN **517502**, review the example bill and choose **Confirm demo
+payment**. The demo bill shows a clearly labelled ₹0 delivery charge. It does
+not confirm a real delivery price or packed inventory. Up to 20 demo packs of
+each size can be added without marking the physical stock as available.
+
+**No money is collected. COD, merchant payments, backend order submission and
+fulfilment remain disabled.** A demo receipt is saved locally for the signed-in
+account in the current browser or Android installation, survives a restart,
+and appears in Orders. These receipts do not synchronize across devices or
+enter either Firebase order ledger. Removing app/browser data removes them.
+Confirmation clears unchanged purchased cart lines; newer quantities and
+other packs are kept. A failed cart cleanup leaves an actionable sync message
+without reporting the saved receipt as a failed payment.
 Accounts, saved addresses, profile/language preferences and first-use guidance
 use real Firebase data. Production orders use a separate `commerce` ledger.
 No sample account or shared App Check secret is included in the shipped UI.
@@ -89,8 +102,9 @@ npm run access:owner
 This command grants only the approved owner email, preserves existing claims
 and creates no account/password. Sign out and back in to refresh permissions.
 Other invited testers need real accounts and a trusted `tester:true` claim for
-private order history/API access. New accounts can still save their own profile,
-address and guidance before this approval. Registrations cannot grant themselves
+private backend order history/API access. Local demo checkout, receipts, cart,
+profile, address and guidance work for normal signed-in accounts without this
+role. Registrations cannot grant themselves
 roles. Guest catalogue browsing remains available.
 
 ## 4. Install the new APK
@@ -113,11 +127,11 @@ Owner-controlled release signing remains necessary for public distribution.
 
 ## 5. Verify the shared connection
 
-1. Check example prices, pending stock, PIN 517502 and the private notice.
-   Confirm the interface cannot accept orders or payments.
+1. Check example prices, unconfirmed stock, PIN 517502 and the simulation notice.
+   Confirm that no COD or merchant payment choice appears in checkout.
 2. Register/sign in with real email/password and verify the UID exists in the
    owner Firebase Authentication project.
-3. With an approved account, save an address on the website and check it on
+3. With a normal signed-in account, add packs and save an address on the website; check them on
    the phone using the same account. Change a profile/language preference and
    refresh/relaunch to verify persistence.
 4. Check first-use guidance. Web and Android guide versions are separate
@@ -126,13 +140,16 @@ Owner-controlled release signing remains necessary for public distribution.
    `stage: private-draft`, `database: realtime`,
    `authentication: email_password`, `checkout: disabled` and
    `onlinePaymentsEnabled: false`.
-6. Verify authenticated checkout is rejected while ordering is disabled, and
-   a different customer cannot read another user's data or use owner actions.
+6. Review a bill and confirm the demo payment. Check the local receipt and
+   cleared cart, then reload/relaunch and verify the receipt remains. Confirm
+   a different signed-in account cannot see that receipt. The backend's actual
+   checkout must still reject orders; its ledgers must remain unchanged.
 7. Test using another Wi-Fi network/mobile data with local services stopped.
    This confirms the phone uses the cloud connection.
 
-The existing cart/order-history implementation is retained, but new purchases
-are unavailable while stock and checkout are disabled. Payment gateways,
+Demo confirmation is a local UI simulation, not an online payment integration.
+Real purchases require confirmed business data and a merchant payment flow.
+Payment gateways,
 automatic courier booking, push notifications and feedback integrations remain
 future work.
 
@@ -189,7 +206,8 @@ Rebuild the private APK using:
 
 ```powershell
 Set-Location 'D:\Hackathons\Narayana Naturals\apps\mobile'
-C:\flutter\bin\flutter.bat build apk --release --build-number=3 --dart-define=BACKEND_MODE=firebase --dart-define=STORE_STAGE=private-draft --dart-define=COMMERCE_API_URL=https://narayana-naturals-api.onrender.com --dart-define=APP_CHECK_PROVIDER=debug --dart-define=INTERNAL_BUILD=true
+$env:GRADLE_USER_HOME = 'D:\Hackathons\NarayanaBuildCache\gradle'
+C:\flutter\bin\flutter.bat build apk --release --build-number=4 --dart-define=BACKEND_MODE=firebase --dart-define=STORE_STAGE=private-draft --dart-define=COMMERCE_API_URL=https://narayana-naturals-api.onrender.com --dart-define=APP_CHECK_PROVIDER=debug --dart-define=INTERNAL_BUILD=true
 ```
 
 Generated output: `build/app/outputs/flutter-apk/app-release.apk`. Copy it to

@@ -8,6 +8,7 @@ import 'config.dart';
 import 'data/backend.dart';
 import 'data/local_store.dart';
 import 'domain/failure.dart';
+import 'domain/demo_checkout.dart';
 import 'domain/models.dart';
 
 class AppController extends ChangeNotifier {
@@ -49,9 +50,18 @@ class AppController extends ChangeNotifier {
       catalogue?.published == true &&
       catalogue!.settings.orderingEnabled &&
       (acceptsPreviewTerms || !catalogue!.settings.preview);
+  bool get checkoutAvailable =>
+      orderingAvailable || (privateDraft && catalogue?.published == true);
+  bool cartAvailable(Variant? variant) =>
+      variant != null &&
+      (privateDraft
+          ? variant.enabled && variant.pricePaise > 0
+          : variant.available);
+  int cartLimit(Variant? variant) =>
+      cartAvailable(variant) ? (privateDraft ? 20 : variant!.quantityLimit) : 0;
   bool get signedIn => user != null;
   bool get canEditCart =>
-      (!signedIn || accountReady) && pending?.orderId == null;
+      (!signedIn || accountReady) && !checkoutBusy && pending?.orderId == null;
   int get packCount => cart.fold(0, (total, line) => total + line.quantity);
   int get estimatedSubtotal => cart.fold(
     0,
@@ -219,9 +229,10 @@ class AppController extends ChangeNotifier {
     }
     address = value.address;
     if (_guidePendingWrites == 0) guide = value.guide;
-    orders = value.orders
-        .where((order) => acceptsPreviewTerms || !order.preview)
-        .toList();
+    orders = [
+      if (privateDraft && user != null) ...store.demoReceiptsFor(user!.uid),
+      ...value.orders.where((order) => acceptsPreviewTerms || !order.preview),
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     accountError = null;
   }
 
@@ -235,7 +246,7 @@ class AppController extends ChangeNotifier {
     final old = quantity(id);
     final variant = catalogue?.variant(id);
     if (value > old &&
-        (variant == null || !variant.available || value > variant.stock)) {
+        (!cartAvailable(variant) || value > cartLimit(variant))) {
       throw const AppFailure('OUT_OF_STOCK');
     }
     final updated = cart.where((line) => line.id != id).toList();
@@ -501,6 +512,7 @@ class AppController extends ChangeNotifier {
 
   Future<PendingCheckout> reviewCheckout(DeliveryAddress delivery) async {
     final identity = user;
+    final generation = _generation;
     if (identity == null) throw const AppFailure('AUTH_REQUIRED');
     if (!identity.emailAccount) throw const AppFailure('EMAIL_REQUIRED');
     if (!accountReady) throw const AppFailure('ACCOUNT_LOADING');
@@ -511,17 +523,29 @@ class AppController extends ChangeNotifier {
     if (cart.isEmpty) throw const AppFailure('EMPTY_CART');
     if (cartDirty) {
       await syncCart();
+      if (!_owns(identity.uid, generation)) {
+        throw const AppFailure('AUTH_REQUIRED');
+      }
       if (cartDirty) throw const AppFailure('CART_SYNC');
     }
-    if (!orderingAvailable) {
+    if (!checkoutAvailable) {
       throw const AppFailure('STORE_NOT_READY');
     }
-    final generation = _generation;
     final requested = List<CartLine>.of(cart);
     checkoutBusy = true;
     _notify();
     try {
-      final quote = await backend.quote(requested, delivery);
+      final random = Random.secure();
+      final key =
+          'nn_${base64Url.encode(List.generate(24, (_) => random.nextInt(256))).replaceAll('=', '')}';
+      final quote = privateDraft
+          ? demoQuote(
+              catalogue: catalogue!,
+              cart: requested,
+              address: delivery,
+              key: key,
+            )
+          : await backend.quote(requested, delivery);
       if (!_owns(identity.uid, generation)) {
         throw const AppFailure('AUTH_REQUIRED');
       }
@@ -534,14 +558,11 @@ class AppController extends ChangeNotifier {
             ),
           ) ||
           quote.totalPaise != quote.subtotalPaise + quote.shippingPaise ||
-          !quote.codAllowed) {
+          (!quote.codAllowed && !(privateDraft && quote.localDemo))) {
         throw AppFailure(
           !quote.codAllowed ? 'COD_UNAVAILABLE' : 'STORE_NOT_READY',
         );
       }
-      final random = Random.secure();
-      final key =
-          'nn_${base64Url.encode(List.generate(24, (_) => random.nextInt(256))).replaceAll('=', '')}';
       final value = PendingCheckout(
         uid: identity.uid,
         quote: quote,
@@ -574,7 +595,7 @@ class AppController extends ChangeNotifier {
       await finishCompletedCheckout();
       return value.orderId!;
     }
-    if (privateDraft) throw const AppFailure('STORE_NOT_READY');
+    if (privateDraft) return _confirmDemoPayment(value);
     final generation = _generation;
     checkoutBusy = true;
     _notify();
@@ -608,6 +629,51 @@ class AppController extends ChangeNotifier {
         }
       }
       rethrow;
+    } finally {
+      if (_owns(value.uid, generation)) {
+        checkoutBusy = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<String> _confirmDemoPayment(PendingCheckout value) async {
+    if (!value.quote.localDemo || catalogue == null) {
+      throw const AppFailure('STORE_NOT_READY');
+    }
+    final generation = _generation;
+    checkoutBusy = true;
+    _notify();
+    try {
+      final receiptId = 'NN-DEMO-${value.key}';
+      final saved = store
+          .demoReceiptsFor(value.uid)
+          .where((receipt) => receipt.id == receiptId)
+          .firstOrNull;
+      if (saved == null) {
+        await syncCart();
+        if (!_owns(value.uid, generation)) {
+          throw const AppFailure('AUTH_REQUIRED');
+        }
+        validateDemoBill(value, catalogue!, cart);
+      }
+      // A deterministic receipt is made durable before clearing the shared
+      // cart. Retrying a storage/cart failure cannot confirm this bill twice.
+      final receipt =
+          saved ?? await store.saveDemoReceipt(value.uid, demoReceipt(value));
+      if (!_owns(value.uid, generation)) {
+        throw const AppFailure('AUTH_REQUIRED');
+      }
+      final completed = value.copyWith(attempted: true, orderId: receipt.id);
+      await store.savePending(value.uid, completed);
+      if (!_owns(value.uid, generation)) {
+        throw const AppFailure('AUTH_REQUIRED');
+      }
+      pending = completed;
+      orders = [receipt, ...orders.where((order) => order.id != receipt.id)];
+      _notify();
+      await finishCompletedCheckout();
+      return receipt.id;
     } finally {
       if (_owns(value.uid, generation)) {
         checkoutBusy = false;
@@ -675,12 +741,12 @@ class AppController extends ChangeNotifier {
     final quantities = {for (final line in cart) line.id: line.quantity};
     for (final line in order.lines) {
       final variant = catalogue?.variant(line.id);
-      if (variant?.available != true) {
+      if (!cartAvailable(variant)) {
         unavailable++;
         continue;
       }
       final desired = (quantities[line.id] ?? 0) + line.quantity;
-      final allowed = min(20, variant!.stock);
+      final allowed = cartLimit(variant);
       if (desired > allowed) unavailable++;
       quantities[line.id] = min(desired, allowed);
     }
@@ -704,6 +770,7 @@ class AppController extends ChangeNotifier {
         return order;
       }
     }
+    if (id.startsWith('NN-DEMO-')) throw const AppFailure('ORDER_NOT_FOUND');
     final order = await backend
         .loadOrder(identity.uid, id)
         .timeout(const Duration(seconds: 20));

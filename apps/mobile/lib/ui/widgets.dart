@@ -128,8 +128,8 @@ class ModeBanner extends StatelessWidget {
           child: Text(
             app.privateDraft
                 ? context.tr(
-                    'Private demo · Example prices · Orders disabled',
-                    'ప్రైవేట్ డెమో · నమూనా ధరలు · ఆర్డర్లు నిలిపివేయబడ్డాయి',
+                    'Private demo · Example prices · Simulated payment only',
+                    'ప్రైవేట్ డెమో · నమూనా ధరలు · చెల్లింపు అనుకరణ మాత్రమే',
                   )
                 : emulator
                 ? context.tr(
@@ -586,7 +586,12 @@ class CatalogueStatus extends StatelessWidget {
         ),
       );
     }
-    final notice = app.catalogue!.settings.notice.inLanguage(app.language);
+    final notice = app.privateDraft
+        ? context.tr(
+            'Private demonstration: choose packs, review an example bill and confirm a simulated payment. No money is collected or delivery booked.',
+            'ప్రైవేట్ ప్రదర్శన: ప్యాక్‌లు ఎంచుకుని నమూనా బిల్లు చూసి డెమో చెల్లింపు ధృవీకరించండి. డబ్బు తీసుకోబడదు లేదా డెలివరీ బుక్ చేయబడదు.',
+          )
+        : app.catalogue!.settings.notice.inLanguage(app.language);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -606,7 +611,7 @@ class CatalogueStatus extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 20),
             child: Text(notice),
           ),
-        if (!app.catalogue!.settings.orderingEnabled)
+        if (!app.privateDraft && !app.catalogue!.settings.orderingEnabled)
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
             child: Text(

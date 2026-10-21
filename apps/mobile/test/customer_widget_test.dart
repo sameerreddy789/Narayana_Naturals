@@ -162,28 +162,29 @@ void main() {
       await tester.pumpWidget(NarayanaApp(controller: controller));
       await tester.pumpAndSettle();
       expect(
-        find.text('Private demo · Example prices · Orders disabled'),
+        find.text('Private demo · Example prices · Simulated payment only'),
         findsOneWidget,
       );
       await tapVisible(tester, find.byKey(const ValueKey('home_shop')));
       expect(find.text('Example price · ₹450'), findsOneWidget);
       expect(find.text('Example price · ₹900'), findsOneWidget);
       expect(find.text('Example price · ₹2,250'), findsOneWidget);
-      expect(find.text('Stock pending'), findsNWidgets(3));
+      expect(find.text('Demo pack · Stock unconfirmed'), findsNWidgets(3));
       expect(controller.orderingAvailable, isFalse);
+      expect(controller.checkoutAvailable, isTrue);
       for (final id in ['1l', '2l', '5l']) {
         expect(
           tester
               .widget<FilledButton>(find.byKey(ValueKey('add_$id')))
               .onPressed,
-          isNull,
+          isNotNull,
         );
       }
       await controller.setLanguage('te');
       await tester.pumpAndSettle();
-      expect(find.text('స్టాక్ నిర్ధారించాలి'), findsNWidgets(3));
+      expect(find.text('డెమో ప్యాక్ · స్టాక్ నిర్ధారించాలి'), findsNWidgets(3));
       expect(
-        find.text('ప్రైవేట్ డెమో · నమూనా ధరలు · ఆర్డర్లు నిలిపివేయబడ్డాయి'),
+        find.text('ప్రైవేట్ డెమో · నమూనా ధరలు · చెల్లింపు అనుకరణ మాత్రమే'),
         findsOneWidget,
       );
       expect(backend.attempted, isEmpty);

@@ -56,8 +56,8 @@ export function SignInPage() {
   }
   return <section className="page-width auth-page"><div className="auth-intro">
     <h1>{t("A familiar place for your everyday oil.", "మీ రోజువారీ నూనె కోసం ఒక పరిచయమైన చోటు.")}</h1>
-    <p>{t("Use one account on the website and app. Your packs, delivery address, and orders stay together.", "వెబ్‌సైట్ మరియు యాప్‌లో ఒకే ఖాతా వాడండి. మీ ప్యాక్‌లు, డెలివరీ చిరునామా మరియు ఆర్డర్లు కలిసి ఉంటాయి.")}</p>
-    <div className="auth-points"><span><Package size={20} />{t("Your packs and order history", "మీ ప్యాక్‌లు మరియు ఆర్డర్ చరిత్ర")}</span><span><MapPin size={20} />{t("A saved delivery address", "సేవ్ చేసిన డెలివరీ చిరునామా")}</span><span><HelpCircle size={20} />{t("A short guide on your first visit", "మీ మొదటి సందర్శనకు ఒక చిన్న గైడ్")}</span></div>
+    <p>{privateDraft ? t("Use one account on the website and app. Your cart and saved address stay in sync. Demo receipts stay on the browser or phone where you confirm them.", "వెబ్‌సైట్ మరియు యాప్‌లో ఒకే ఖాతా వాడండి. మీ కార్ట్ మరియు సేవ్ చేసిన చిరునామా రెండింటిలో కనిపిస్తాయి. డెమో రసీదులు మీరు ధృవీకరించిన బ్రౌజర్ లేదా ఫోన్‌లోనే ఉంటాయి.") : t("Use one account on the website and app. Your packs, delivery address, and orders stay together.", "వెబ్‌సైట్ మరియు యాప్‌లో ఒకే ఖాతా వాడండి. మీ ప్యాక్‌లు, డెలివరీ చిరునామా మరియు ఆర్డర్లు కలిసి ఉంటాయి.")}</p>
+    <div className="auth-points"><span><Package size={20} />{privateDraft ? t("Your shared shopping cart", "రెండింటిలో కనిపించే మీ కార్ట్") : t("Your packs and order history", "మీ ప్యాక్‌లు మరియు ఆర్డర్ చరిత్ర")}</span><span><MapPin size={20} />{t("A saved delivery address", "సేవ్ చేసిన డెలివరీ చిరునామా")}</span><span><HelpCircle size={20} />{t("A short guide on your first visit", "మీ మొదటి సందర్శనకు ఒక చిన్న గైడ్")}</span></div>
   </div><form className="auth-form" onSubmit={event => void submit(event)} aria-busy={busy}>
     <UserRound size={29} strokeWidth={1.5} />
     <h2>{reset ? t("Reset your password", "మీ పాస్‌వర్డ్ రీసెట్ చేయండి") : createAccount ? t("Create your account", "మీ ఖాతా సృష్టించండి") : t("Welcome back", "మళ్లీ స్వాగతం")}</h2>
@@ -148,6 +148,27 @@ export function AddressesPage() {
 }
 
 export function OrdersPage() {
+  return privateDraft ? <DemoReceiptsPage /> : <StandardOrdersPage />;
+}
+
+function DemoReceiptsPage() {
+  const { state, demoReceipts, ready, accountReady, accountError, t } = usePreview();
+  return <section className="page-width standard-page">
+    <PageHeading title={t('Your demo receipts', 'మీ డెమో రసీదులు')}
+      description={t('Saved in this browser for your account. No money is collected and no delivery is booked.', 'మీ ఖాతా కోసం ఈ బ్రౌజర్‌లో సేవ్ అవుతాయి. డబ్బు తీసుకోబడదు, డెలివరీ బుక్ చేయబడదు.')} />
+    {!ready || (state.user && !accountReady) ? <DataStatus error={accountError} loading={t('Loading your receipts…', 'మీ రసీదులు లోడ్ అవుతున్నాయి…')} />
+      : !state.user ? <EmptyState title={t('Sign in to view receipts', 'రసీదుల కోసం సైన్ ఇన్ చేయండి')} description={t('Use the account that completed the demo in this browser.', 'ఈ బ్రౌజర్‌లో డెమో పూర్తి చేసిన ఖాతా ఉపయోగించండి.')} action={t('Sign in', 'సైన్ ఇన్')} href="/sign-in?returnTo=/account/orders" />
+      : !demoReceipts.length ? <EmptyState title={t('Try your first demo checkout', 'మీ మొదటి డెమో చెక్అవుట్ ప్రయత్నించండి')} description={t('Add a pack, enter your address and confirm the demo payment. Your receipt will appear here.', 'ప్యాక్ జోడించి, చిరునామా నమోదు చేసి డెమో చెల్లింపు ధృవీకరించండి. రసీదు ఇక్కడ కనిపిస్తుంది.')} action={t('View oil packs', 'నూనె ప్యాక్‌లు చూడండి')} />
+      : <div className="order-list">{demoReceipts.map(receipt => <Link href={'/account/orders/' + receipt.id} key={receipt.id} className="order-list-item">
+          <div className="order-list-symbol"><ClipboardList size={25} strokeWidth={1.5} /></div>
+          <div><h2>{receipt.lines.map(line => `${line.litres} L × ${line.quantity}`).join(' · ')}</h2>
+            <p>{new Intl.DateTimeFormat(state.language === 'te' ? 'te-IN' : 'en-IN', { dateStyle: 'medium', timeZone: 'Asia/Kolkata' }).format(new Date(receipt.createdAt))} · {t('Payment simulated', 'చెల్లింపు అనుకరణ')}</p></div>
+          <div className="order-list-end"><strong>{money(receipt.totalPaise)}</strong><span className="status-badge">{t('Demo completed', 'డెమో పూర్తయింది')}</span></div><ArrowRight size={20} />
+        </Link>)}</div>}
+  </section>;
+}
+
+function StandardOrdersPage() {
   const { state, mode, ready, accountReady, ordersReady, accountError, ordersError, t } = usePreview();
   const orders = state.orders.filter(order => order.uid === state.user?.uid);
   return <section className="page-width standard-page"><PageHeading title={t("Your orders", "మీ ఆర్డర్లు")} description={t("See what is on its way, or choose a familiar pack again.", "మీ ఆర్డర్ స్థితి చూడండి లేదా మళ్లీ ప్యాక్ ఎంచుకోండి.")} />
@@ -184,6 +205,50 @@ export function useOrderRecord(id: string | undefined, owner = false) {
 }
 
 export function OrderDetailPage({ id, result = false }: { id: string; result?: boolean }) {
+  return privateDraft ? <DemoReceiptPage id={id} result={result} /> : <StandardOrderDetailPage id={id} result={result} />;
+}
+
+function DemoReceiptPage({ id, result }: { id: string; result: boolean }) {
+  const { state, demoReceipts, ready, accountReady, accountError, cartBusy, addPack, t } = usePreview();
+  const [adding, setAdding] = useState(false);
+  const router = useRouter();
+  const receipt = demoReceipts.find(receipt => receipt.id === id && receipt.uid === state.user?.uid);
+  if (!ready || (state.user && !accountReady)) return <section className="page-width standard-page"><DataStatus error={accountError} loading={t('Loading your demo receipt…', 'మీ డెమో రసీదు లోడ్ అవుతోంది…')} /></section>;
+  if (!receipt) return <section className="page-width standard-page"><EmptyState title={t('Demo receipt unavailable', 'డెమో రసీదు అందుబాటులో లేదు')}
+    description={t('Sign in to the same account in the browser where you confirmed this demo. Receipts are stored locally.', 'ఈ డెమో ధృవీకరించిన బ్రౌజర్‌లో అదే ఖాతాతో సైన్ ఇన్ చేయండి. రసీదులు స్థానికంగా సేవ్ అవుతాయి.')} action={t('Your receipts', 'మీ రసీదులు')} href="/account/orders" /></section>;
+  async function again() {
+    if (adding || !receipt) return;
+    setAdding(true);
+    try {
+      let added = false;
+      for (const line of receipt.lines) if (await addPack(line.id, line.quantity)) added = true;
+      if (added) router.push('/cart');
+    } finally { setAdding(false); }
+  }
+  return <section className="page-width standard-page">
+    <div className="order-confirmation-heading">{result && <CheckCircle2 size={45} strokeWidth={1.3} />}
+      <PageHeading title={result ? t('Demo payment confirmed', 'డెమో చెల్లింపు ధృవీకరించబడింది') : t('Your demo receipt', 'మీ డెమో రసీదు')}
+        description={t('No money was collected and no delivery was booked. This receipt is saved in this browser for your account.', 'డబ్బు తీసుకోబడలేదు, డెలివరీ బుక్ కాలేదు. మీ ఖాతా కోసం ఈ బ్రౌజర్‌లో రసీదు సేవ్ అయింది.')} />
+    </div><p className="small-note order-reference">{receipt.id}</p>
+    <div className="order-detail-layout"><div>
+      <div className="detail-block"><h2>{t('Your oil packs', 'మీ నూనె ప్యాక్‌లు')}</h2>
+        {receipt.lines.map(line => <div className="summary-row" key={line.id}><span>{line.litres} L × {line.quantity}<br /><small>{money(line.unitPricePaise)} {t('per pack', 'ఒక ప్యాక్‌కు')}</small></span><strong>{money(line.unitPricePaise * line.quantity)}</strong></div>)}
+        <p className="small-note">{t('Example prices · Stock unconfirmed', 'నమూనా ధరలు · స్టాక్ నిర్ధారించాలి')}</p>
+        <button className="button secondary" disabled={adding || cartBusy} onClick={() => void again()}>{adding ? t('Adding packs…', 'ప్యాక్‌లు చేరుతున్నాయి…') : t('Add these packs again', 'ఈ ప్యాక్‌లు మళ్లీ జోడించండి')}<RotateCcw size={17} /></button>
+      </div>
+      <div className="detail-block"><h2><MapPin size={20} />{t('Delivery details', 'డెలివరీ వివరాలు')}</h2><p>{receipt.address.name}<br />{receipt.address.street}<br />{receipt.address.city} — {receipt.address.pin}<br />+91 {receipt.address.phone}</p></div>
+      <div className="detail-block"><h2>{t('Demonstration complete', 'ప్రదర్శన పూర్తయింది')}</h2><p>{t('Your address and billing flow are complete. No payment transaction or shipment has been created.', 'చిరునామా, బిల్లింగ్ ప్రదర్శన పూర్తయింది. చెల్లింపు లావాదేవీ లేదా రవాణా సృష్టించబడలేదు.')}</p></div>
+    </div><aside className="order-summary"><h2>{t('Demo bill summary', 'డెమో బిల్లు సారాంశం')}</h2>
+      <div className="summary-row"><span>{t('Products', 'ఉత్పత్తులు')}</span><strong>{money(receipt.subtotalPaise)}</strong></div>
+      <div className="summary-row"><span>{t('Demo delivery', 'డెమో డెలివరీ')}</span><span>₹0</span></div><hr />
+      <div className="summary-row total"><span>{t('Demo total', 'డెమో మొత్తం')}</span><strong>{money(receipt.totalPaise)}</strong></div>
+      <div className="payment-summary"><strong>{t('Payment simulated', 'చెల్లింపు అనుకరణ')}</strong><p>{t('Amount collected: ₹0', 'తీసుకోబడిన మొత్తం: ₹0')}</p></div>
+      <Link href="/account/orders" className="button secondary full-width">{t('View all demo receipts', 'అన్ని డెమో రసీదులు చూడండి')}<ArrowRight size={17} /></Link>
+    </aside></div>
+  </section>;
+}
+
+function StandardOrderDetailPage({ id, result = false }: { id: string; result?: boolean }) {
   const { state, mode, ready, accountReady, accountError, t, addPack } = usePreview();
   const { order, loading, error } = useOrderRecord(id);
   const [adding, setAdding] = useState(false);
