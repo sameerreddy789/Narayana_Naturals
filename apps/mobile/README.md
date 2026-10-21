@@ -110,9 +110,17 @@ Replace the example URL with the actual deployed endpoint. Production API
 calls require App Check. Use `APP_CHECK_PROVIDER=debug` only for a registered
 internal debug token; use `playIntegrity` for the configured public app.
 
-The current internal Firebase APK uses App Check off and has no hosted API
-URL. It is for checking configuration and setup error behavior. Real ordering
-requires the hosted API, deployed RTDB rules, confirmed business data and
-owner release setup. The app includes COD, order history/status/reorder,
-bilingual screens and onboarding. Merchant payments, automated courier
-bookings, notifications and feedback are future integrations.
+The current [private client draft](../../docs/LIVE-DRAFT-APK.md) connects to
+`https://narayana-naturals-api.onrender.com`, real email/password accounts and
+the `commerceDraft` Realtime Database catalogue. It uses individually registered
+App Check debug devices. Account includes **Set up this test phone → Copy
+device code**, available only in explicitly compiled internal private debug
+builds. Register the copied code for the Android app in Firebase Console.
+
+The draft labels example prices, shows pending stock and demonstration PIN
+517502, and disables all ordering and payments. Saved addresses, language and
+account data sync with the hosted website. New users can access their own
+personal data before an owner grants private tester/owner access. Merchant
+payments, automated courier bookings, notifications and feedback are future
+integrations. Public distribution also requires owner signing and production
+App Check configuration.

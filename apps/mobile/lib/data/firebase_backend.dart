@@ -30,9 +30,8 @@ class FirebaseCommerceBackend implements CommerceBackend {
   final FirebaseDatabase db;
   @override
   CustomerIdentity? get currentUser => _identity(auth.currentUser);
-  CustomerIdentity? _identity(User? user) => user == null
-      ? null
-      : CustomerIdentity(user.uid, user.email);
+  CustomerIdentity? _identity(User? user) =>
+      user == null ? null : CustomerIdentity(user.uid, user.email);
   @override
   Stream<CustomerIdentity?> authChanges() =>
       auth.authStateChanges().map(_identity);
@@ -82,6 +81,15 @@ class FirebaseCommerceBackend implements CommerceBackend {
       .ref('${config.commerceRoot}/ordersByUser/$uid')
       .orderByChild('createdAt')
       .limitToLast(50);
+
+  Future<bool> _canReadOrderHistory(String uid) async {
+    _requireUid(uid);
+    if (!privateDraft) return true;
+    final claims = (await auth.currentUser!.getIdTokenResult()).claims;
+    _requireUid(uid);
+    return claims?['admin'] == true || claims?['tester'] == true;
+  }
+
   List<OrderRecord> _parseOrders(DataSnapshot snapshot) =>
       snapshot.children
           .map((value) => OrderRecord.fromJson(value.value))
@@ -182,11 +190,15 @@ class FirebaseCommerceBackend implements CommerceBackend {
       cart = parseCart(stringMap((await _read(cartRef)).value)['lines']);
     }
     final uid = identity.uid;
+    // Registration grants access to personal data. Private order history
+    // requires a separately assigned tester/owner role; it must not block
+    // a new customer's profile, address, cart or first-use guide.
+    final canReadOrders = await _canReadOrderHistory(uid);
     final values = await Future.wait([
       _read(db.ref('users/$uid/profile')),
       _read(db.ref('users/$uid/addresses/default')),
       _read(db.ref('users/$uid/onboarding/android-v1')),
-      _read(_orders(uid)),
+      if (canReadOrders) _read(_orders(uid)),
     ]);
     _requireUid(uid);
     return AccountSnapshot(
@@ -198,7 +210,7 @@ class FirebaseCommerceBackend implements CommerceBackend {
           : null,
       guide: GuideProgress.fromJson(values[2].value),
       cart: cart,
-      orders: _parseOrders(values[3]),
+      orders: canReadOrders ? _parseOrders(values[3]) : const [],
     );
   }
 
@@ -206,6 +218,8 @@ class FirebaseCommerceBackend implements CommerceBackend {
   Stream<AccountSnapshot> accountChanges(CustomerIdentity identity) {
     final subscriptions = <StreamSubscription<DatabaseEvent>>[];
     final values = <String, DataSnapshot>{};
+    var canReadOrders = false;
+    var cancelled = false;
     late StreamController<AccountSnapshot> result;
     void failure(Object error) {
       if (!result.isClosed) result.addError(_failure(error));
@@ -218,7 +232,7 @@ class FirebaseCommerceBackend implements CommerceBackend {
             'address',
             'guide',
             'cart',
-            'orders',
+            if (canReadOrders) 'orders',
           ].every(values.containsKey)) {
         return;
       }
@@ -232,7 +246,7 @@ class FirebaseCommerceBackend implements CommerceBackend {
                 : null,
             guide: GuideProgress.fromJson(values['guide']!.value),
             cart: parseCart(stringMap(values['cart']!.value)['lines']),
-            orders: _parseOrders(values['orders']!),
+            orders: canReadOrders ? _parseOrders(values['orders']!) : const [],
           ),
         );
       } catch (error) {
@@ -242,23 +256,30 @@ class FirebaseCommerceBackend implements CommerceBackend {
 
     final uid = identity.uid;
     result = StreamController<AccountSnapshot>(
-      onListen: () {
-        for (final entry in <String, Query>{
-          'profile': db.ref('users/$uid/profile'),
-          'address': db.ref('users/$uid/addresses/default'),
-          'guide': db.ref('users/$uid/onboarding/android-v1'),
-          'cart': db.ref('carts/$uid'),
-          'orders': _orders(uid),
-        }.entries) {
-          subscriptions.add(
-            entry.value.onValue.listen((event) {
-              values[entry.key] = event.snapshot;
-              emit();
-            }, onError: failure),
-          );
+      onListen: () async {
+        try {
+          canReadOrders = await _canReadOrderHistory(uid);
+          if (cancelled) return;
+          for (final entry in <String, Query>{
+            'profile': db.ref('users/$uid/profile'),
+            'address': db.ref('users/$uid/addresses/default'),
+            'guide': db.ref('users/$uid/onboarding/android-v1'),
+            'cart': db.ref('carts/$uid'),
+            if (canReadOrders) 'orders': _orders(uid),
+          }.entries) {
+            subscriptions.add(
+              entry.value.onValue.listen((event) {
+                values[entry.key] = event.snapshot;
+                emit();
+              }, onError: failure),
+            );
+          }
+        } catch (error) {
+          if (!cancelled) failure(error);
         }
       },
       onCancel: () async {
+        cancelled = true;
         for (final sub in subscriptions) {
           await sub.cancel();
         }

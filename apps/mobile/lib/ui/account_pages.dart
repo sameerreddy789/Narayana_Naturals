@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../domain/failure.dart';
 import 'auth_checkout.dart';
+import 'private_device_setup.dart';
 import 'widgets.dart';
 
 class AccountPage extends StatelessWidget {
@@ -43,6 +44,10 @@ class AccountPage extends StatelessWidget {
         const SizedBox(height: 16),
         const LanguageChoice(),
         const SizedBox(height: 28),
+        if (PrivateDeviceSetup.enabled) ...[
+          const PrivateDeviceSetup(),
+          const SizedBox(height: 28),
+        ],
         if (!app.signedIn)
           EmptyState(
             icon: Icons.person_outline,
@@ -391,10 +396,7 @@ class InfoPage extends StatelessWidget {
       ],
       InfoTopic.help => [
         _InfoParagraph(
-          title: context.tr(
-            'Forgot your password?',
-            'పాస్‌వర్డ్ మర్చిపోయారా?',
-          ),
+          title: context.tr('Forgot your password?', 'పాస్‌వర్డ్ మర్చిపోయారా?'),
           body: context.tr(
             'Choose Forgot password on the sign-in screen and enter your account email. Check your inbox and spam folder for the reset link. Local previews do not send email.',
             'సైన్ ఇన్ పేజీలో పాస్‌వర్డ్ మర్చిపోయారా ఎంచుకుని మీ ఖాతా ఈమెయిల్ నమోదు చేయండి. రీసెట్ లింక్ కోసం ఇన్‌బాక్స్ మరియు స్పామ్ ఫోల్డర్ చూడండి. స్థానిక ప్రివ్యూలో ఈమెయిల్ పంపబడదు.',

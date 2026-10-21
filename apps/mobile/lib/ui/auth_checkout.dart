@@ -446,7 +446,15 @@ class _WelcomePageState extends State<WelcomePage> {
           const LanguageChoice(),
           const SizedBox(height: 28),
           Text(
-            context.tr('Choose a pack in Shop.', 'షాప్‌లో ప్యాక్ ఎంచుకోండి.'),
+            context.app.privateDraft
+                ? context.tr(
+                    'Browse example packs and prices in Shop.',
+                    'షాప్‌లో నమూనా ప్యాక్‌లు, ధరలను చూడండి.',
+                  )
+                : context.tr(
+                    'Choose a pack in Shop.',
+                    'షాప్‌లో ప్యాక్ ఎంచుకోండి.',
+                  ),
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
@@ -459,10 +467,15 @@ class _WelcomePageState extends State<WelcomePage> {
           ),
           const SizedBox(height: 16),
           Text(
-            context.tr(
-              'Review the total and pay cash on delivery.',
-              'మొత్తం సమీక్షించి డెలివరీ సమయంలో నగదు చెల్లించండి.',
-            ),
+            context.app.privateDraft
+                ? context.tr(
+                    'Save your address. Orders and payments are disabled in this private demonstration.',
+                    'మీ చిరునామా సేవ్ చేయండి. ఈ ప్రైవేట్ ప్రదర్శనలో ఆర్డర్లు, చెల్లింపులు నిలిపివేయబడ్డాయి.',
+                  )
+                : context.tr(
+                    'Review the total and pay cash on delivery.',
+                    'మొత్తం సమీక్షించి డెలివరీ సమయంలో నగదు చెల్లించండి.',
+                  ),
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 28),

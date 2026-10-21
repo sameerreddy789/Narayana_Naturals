@@ -30,9 +30,9 @@ chosen by the owner.
 
 ## 2. Complete private App Check registration
 
-Enable the `firebaseappcheck.googleapis.com` API in the Google project first.
-The supplied Admin SDK credential can access Auth and the database, but does
-not have permission to enable Google APIs. If owner CLI authorization expires,
+App Check is enabled for this project. The developer registered the verification
+browser and emulator separately and verified their token exchanges. Additional
+testers must register their own browser or phone. If owner CLI authorization expires,
 open a real PowerShell terminal and run:
 
 ```powershell
@@ -48,10 +48,18 @@ register approved browser/device tokens through its official API.
 The website generates a separate debug secret for each browser profile/origin.
 The APK generates one per Android installation. In Firebase Console → App
 Check → Apps → Manage debug tokens, register the secret for the corresponding
-web or Android app. The developer captures browser tokens from the SDK's
-IndexedDB/developer console and Android tokens privately from
-`DebugAppCheckProvider` logs using ADB. Keep these tokens out of Git, screenshots
-and messages. Additional testers need individual registration.
+web or Android app. Browser tokens are available in the SDK's IndexedDB/developer
+console. On the new APK, open **Account → Set up this test phone → Copy device
+code**. Paste it into the Android app's **Manage debug tokens → Add debug token**
+entry in Firebase Console. Use a distinct name for each phone. This action works
+without root, USB or a store account and copies the SDK-generated installation
+secret directly to the clipboard without displaying it. The device setup panel
+and native channel are enabled only when the build explicitly selects Firebase,
+the private draft, the debug provider and `INTERNAL_BUILD=true`.
+
+Keep these tokens out of Git, screenshots and public messages. Reopen the phone
+app after registration. Reinstalling with cleared app data generates a new code;
+remove tokens for retired test installations from Firebase Console.
 
 The web SDK uses its debug exchange with a `CustomProvider` whose fallback
 fails closed. Android uses `AndroidDebugProvider`. The Node API requires
@@ -81,8 +89,9 @@ npm run access:owner
 This command grants only the approved owner email, preserves existing claims
 and creates no account/password. Sign out and back in to refresh permissions.
 Other invited testers need real accounts and a trusted `tester:true` claim for
-private order history/API access. Registrations cannot grant themselves roles.
-Guest catalogue browsing remains available.
+private order history/API access. New accounts can still save their own profile,
+address and guidance before this approval. Registrations cannot grant themselves
+roles. Guest catalogue browsing remains available.
 
 ## 4. Install the new APK
 
@@ -180,7 +189,7 @@ Rebuild the private APK using:
 
 ```powershell
 Set-Location 'D:\Hackathons\Narayana Naturals\apps\mobile'
-C:\flutter\bin\flutter.bat build apk --release --build-number=2 --dart-define=BACKEND_MODE=firebase --dart-define=STORE_STAGE=private-draft --dart-define=COMMERCE_API_URL=https://narayana-naturals-api.onrender.com --dart-define=APP_CHECK_PROVIDER=debug --dart-define=INTERNAL_BUILD=true
+C:\flutter\bin\flutter.bat build apk --release --build-number=3 --dart-define=BACKEND_MODE=firebase --dart-define=STORE_STAGE=private-draft --dart-define=COMMERCE_API_URL=https://narayana-naturals-api.onrender.com --dart-define=APP_CHECK_PROVIDER=debug --dart-define=INTERNAL_BUILD=true
 ```
 
 Generated output: `build/app/outputs/flutter-apk/app-release.apk`. Copy it to

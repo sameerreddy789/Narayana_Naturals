@@ -122,6 +122,7 @@ ignored `artifacts/` directory:
 
 | APK | Use |
 | --- | --- |
+| `narayana-naturals-live-draft.apk` | Current private client draft; hosted Firebase/Node backend with individually registered test phones |
 | `narayana-naturals-preview.apk` | Standalone demonstration; no shared backend needed |
 | `narayana-naturals-emulator.apk` | Connected Android emulator, website and local Node API |
 | `narayana-naturals-usb.apk` | Physical Android phone connected to this laptop by USB |
